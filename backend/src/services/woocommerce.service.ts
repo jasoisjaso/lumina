@@ -2,6 +2,7 @@ import WooCommerceRestApi from '@woocommerce/woocommerce-rest-api';
 import db from '../database/knex';
 import { config } from '../config';
 import { settingsService } from './settings.service';
+import workflowService from './workflow.service';
 
 /**
  * WooCommerce Sync Service
@@ -305,7 +306,16 @@ class WooCommerceService {
         });
     } else {
       // Insert new order
-      await db('cached_orders').insert(orderData);
+      const [newOrderId] = await db('cached_orders').insert(orderData);
+
+      // Add new order to workflow board
+      try {
+        await workflowService.addOrder(newOrderId, familyId);
+        console.log(`Added WooCommerce order ${order.id} (cached ID: ${newOrderId}) to workflow board`);
+      } catch (error: any) {
+        console.error(`Failed to add order ${order.id} to workflow:`, error.message);
+        // Don't fail the entire sync if workflow add fails
+      }
     }
   }
 

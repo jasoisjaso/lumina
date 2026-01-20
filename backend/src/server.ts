@@ -16,6 +16,7 @@ import weatherRoutes from './routes/weather.routes';
 import icloudCalendarRoutes from './routes/icloud-calendar.routes';
 import photoGalleryRoutes from './routes/photo-gallery.routes';
 import setupRoutes from './routes/setup.routes';
+import workflowRoutes from './routes/workflow.routes';
 import { syncOrdersJob } from './jobs/sync-orders.job';
 import { syncCalendarsJob } from './jobs/sync-calendars.job';
 
@@ -72,6 +73,7 @@ app.use('/api/v1/user-settings', userSettingsRoutes);
 app.use('/api/v1/weather', weatherRoutes);
 app.use('/api/v1/icloud-calendar', icloudCalendarRoutes);
 app.use('/api/v1/photos', photoGalleryRoutes);
+app.use('/api/v1/workflow', workflowRoutes);
 
 // 404 handler
 app.use((req, res) => {

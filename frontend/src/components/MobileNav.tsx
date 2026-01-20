@@ -161,7 +161,7 @@ const MobileNav: React.FC<MobileNavProps> = ({
               <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wider mb-3">
                 Quick Actions
               </h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <button
                   onClick={() => handleDrawerItemClick(() => onViewChange('calendar'))}
                   className="p-4 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors text-center"
@@ -181,6 +181,16 @@ const MobileNav: React.FC<MobileNavProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <div className="text-sm font-medium text-slate-800">Photos</div>
+                </button>
+                <button
+                  onClick={() => handleDrawerItemClick(() => onViewChange('workflow'))}
+                  className="p-4 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors text-center"
+                  style={{ minHeight: '80px' }}
+                >
+                  <svg className="w-8 h-8 text-indigo-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  <div className="text-sm font-medium text-slate-800">Workflow</div>
                 </button>
               </div>
             </div>

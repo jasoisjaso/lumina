@@ -12,6 +12,7 @@ const OrdersSidebar = lazy(() => import('./components/OrdersSidebar'));
 const Kiosk = lazy(() => import('./components/Kiosk'));
 const UserProfile = lazy(() => import('./components/UserProfile'));
 const SetupWizard = lazy(() => import('./components/SetupWizard'));
+const WorkflowBoard = lazy(() => import('./components/workflow/WorkflowBoard'));
 
 // Loading fallback component
 const LoadingFallback: React.FC = () => (
@@ -28,7 +29,7 @@ const Dashboard: React.FC = () => {
   const { isAuthenticated } = useAuthStore();
   const { loadSettings, isInitialized } = useSettingsStore();
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [currentView, setCurrentView] = useState<'calendar' | 'photos'>('calendar');
+  const [currentView, setCurrentView] = useState<'calendar' | 'photos' | 'workflow'>('calendar');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [checkingSetup, setCheckingSetup] = useState(true);
@@ -79,7 +80,7 @@ const Dashboard: React.FC = () => {
   };
 
   const handleViewChange = (view: string) => {
-    if (view === 'calendar' || view === 'photos') {
+    if (view === 'calendar' || view === 'photos' || view === 'workflow') {
       setCurrentView(view);
     }
   };
@@ -122,8 +123,10 @@ const Dashboard: React.FC = () => {
       <Suspense fallback={<LoadingFallback />}>
         {currentView === 'calendar' ? (
           <Calendar onError={handleError} />
-        ) : (
+        ) : currentView === 'photos' ? (
           <PhotoGallery onError={handleError} />
+        ) : (
+          <WorkflowBoard />
         )}
       </Suspense>
     </Layout>
