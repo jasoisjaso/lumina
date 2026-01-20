@@ -90,3 +90,6 @@ backups/
 
 # Claude Code project files (keep these for development)
 !.claude/
+
+# Claude Code configuration
+.claude/
