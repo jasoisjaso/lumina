@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Calendar Authorization</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-center;
+      min-height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+    }
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top: 4px solid white;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .success {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    p {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="spinner"></div>
+    <h1>Authorizing...</h1>
+    <p>Please wait while we complete the authorization</p>
+  </div>
+
+  <script>
+    (function() {
+      // Parse the URL to get the authorization code or error
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const error = urlParams.get('error');
+
+      if (error) {
+        // Authorization was denied or failed
+        document.querySelector('.container').innerHTML = `
+          <div class="success">❌</div>
+          <h1>Authorization Failed</h1>
+          <p>${error === 'access_denied' ? 'Access was denied' : 'An error occurred'}</p>
+          <p style="margin-top: 1rem;">You can close this window</p>
+        `;
+
+        // Send error to opener window
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'GOOGLE_CALENDAR_OAUTH',
+            error: error
+          }, window.location.origin);
+        }
+
+        // Close after 2 seconds
+        setTimeout(() => {
+          window.close();
+        }, 2000);
+      } else if (code) {
+        // Successfully got the authorization code
+        document.querySelector('.container').innerHTML = `
+          <div class="success">✓</div>
+          <h1>Authorization Successful!</h1>
+          <p>Connecting your calendar...</p>
+        `;
+
+        // Send code to opener window
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'GOOGLE_CALENDAR_OAUTH',
+            code: code
+          }, window.location.origin);
+        }
+
+        // Close window
+        setTimeout(() => {
+          window.close();
+        }, 1000);
+      } else {
+        // No code or error found
+        document.querySelector('.container').innerHTML = `
+          <div class="success">❌</div>
+          <h1>Invalid Response</h1>
+          <p>No authorization code received</p>
+          <p style="margin-top: 1rem;">You can close this window</p>
+        `;
+
+        setTimeout(() => {
+          window.close();
+        }, 2000);
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', 'Roboto', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* FullCalendar Skylight Styling */
+.fc {
+  font-family: 'Inter', -apple-system, system-ui, sans-serif;
+}
+
+.fc .fc-button {
+  background: #4F46E5 !important;
+  border: none !important;
+  border-radius: 0.5rem !important;
+  padding: 0.5rem 1rem !important;
+  font-weight: 500 !important;
+  text-transform: capitalize !important;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1) !important;
+  transition: all 0.2s !important;
+}
+
+.fc .fc-button:hover {
+  background: #4338CA !important;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1) !important;
+}
+
+.fc .fc-button:disabled {
+  background: #E2E8F0 !important;
+  color: #94A3B8 !important;
+}
+
+.fc .fc-button-active {
+  background: #4338CA !important;
+}
+
+.fc .fc-toolbar-title {
+  font-size: 1.5rem !important;
+  font-weight: 600 !important;
+  color: #1E293B !important;
+}
+
+.fc .fc-col-header-cell {
+  background: transparent !important;
+  border: none !important;
+  padding: 0.75rem 0 !important;
+}
+
+.fc .fc-col-header-cell-cushion {
+  color: #64748B !important;
+  font-weight: 600 !important;
+  font-size: 0.75rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+.fc .fc-daygrid-day {
+  border: 1px solid #E2E8F0 !important;
+  background: white !important;
+}
+
+.fc .fc-daygrid-day:hover {
+  background: #F8FAFC !important;
+}
+
+.fc .fc-daygrid-day-number {
+  color: #475569 !important;
+  font-weight: 500 !important;
+  padding: 0.5rem !important;
+}
+
+.fc .fc-daygrid-day.fc-day-today {
+  background: #EEF2FF !important;
+  border: 2px solid #4F46E5 !important;
+}
+
+.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  color: #4F46E5 !important;
+  font-weight: 600 !important;
+}
+
+.fc .fc-event {
+  border-radius: 0.5rem !important;
+  border: none !important;
+  padding: 0.25rem 0.5rem !important;
+  margin-bottom: 2px !important;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1) !important;
+  transition: all 0.2s !important;
+  cursor: pointer !important;
+}
+
+.fc .fc-event:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1) !important;
+}
+
+.fc .fc-event-title {
+  font-weight: 500 !important;
+  font-size: 0.875rem !important;
+}
+
+.fc .fc-daygrid-more-link {
+  color: #4F46E5 !important;
+  font-weight: 500 !important;
+  font-size: 0.75rem !important;
+}
+
+.fc .fc-popover {
+  border: none !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1) !important;
+}
+
+.fc .fc-popover-header {
+  background: #F8FAFC !important;
+  border: none !important;
+  padding: 1rem !important;
+  border-radius: 1rem 1rem 0 0 !important;
+  font-weight: 600 !important;
+  color: #1E293B !important;
+}
+
+.fc .fc-popover-body {
+  padding: 0.5rem !important;
+}
+
+/* Smooth animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
