@@ -17,7 +17,7 @@ The fastest way to get Lumina running:
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/yourusername/lumina.git
+git clone https://github.com/jasoisjaso/lumina.git
 cd lumina
 
 # 2. Start with Docker Compose
@@ -42,7 +42,7 @@ That's it! The setup wizard will guide you through the rest.
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/lumina.git
+git clone https://github.com/jasoisjaso/lumina.git
 cd lumina
 
 # Start all services
@@ -203,7 +203,7 @@ exit
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/lumina.git
+git clone https://github.com/jasoisjaso/lumina.git
 cd lumina
 
 # Start services
@@ -284,7 +284,7 @@ sudo sh get-docker.sh
 sudo usermod -aG docker ubuntu
 
 # Deploy Lumina
-git clone https://github.com/yourusername/lumina.git
+git clone https://github.com/jasoisjaso/lumina.git
 cd lumina
 docker compose -f docker-compose.prod.yml up -d
 ```
@@ -317,7 +317,7 @@ sudo certbot --nginx -d lumina.yourdomain.com
 ssh root@your-droplet-ip
 
 # Run setup script
-curl -fsSL https://raw.githubusercontent.com/yourusername/lumina/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jasoisjaso/lumina/main/scripts/install.sh | bash
 ```
 
 ### Google Cloud Platform
@@ -350,7 +350,7 @@ az group create --name lumina-rg --location eastus
 az container create \
   --resource-group lumina-rg \
   --name lumina \
-  --image yourusername/lumina:latest \
+  --image jasoisjaso/lumina:latest \
   --dns-name-label lumina \
   --ports 80 3001
 ```
@@ -629,8 +629,8 @@ CREATE INDEX idx_events_user ON calendar_events(user_id);
 ## Getting Help
 
 - 📖 [Documentation](README.md)
-- 🐛 [Report Issues](https://github.com/yourusername/lumina/issues)
-- 💬 [Discussions](https://github.com/yourusername/lumina/discussions)
+- 🐛 [Report Issues](https://github.com/jasoisjaso/lumina/issues)
+- 💬 [Discussions](https://github.com/jasoisjaso/lumina/discussions)
 - 🔧 [Troubleshooting Guide](TROUBLESHOOTING.md)
 
 ---

@@ -8,7 +8,7 @@ There are many ways to contribute to Lumina:
 
 ### 1. Report Bugs
 
-Found a bug? Please [create an issue](https://github.com/yourusername/lumina/issues/new) with:
+Found a bug? Please [create an issue](https://github.com/jasoisjaso/lumina/issues/new) with:
 
 - **Clear title** describing the issue
 - **Steps to reproduce** the problem
@@ -19,7 +19,7 @@ Found a bug? Please [create an issue](https://github.com/yourusername/lumina/iss
 
 ### 2. Suggest Features
 
-Have an idea? We'd love to hear it! [Open a discussion](https://github.com/yourusername/lumina/discussions) or create a feature request issue with:
+Have an idea? We'd love to hear it! [Open a discussion](https://github.com/jasoisjaso/lumina/discussions) or create a feature request issue with:
 
 - **Use case** - Why is this feature needed?
 - **Proposed solution** - How should it work?
@@ -57,7 +57,7 @@ git clone https://github.com/YOUR_USERNAME/lumina.git
 cd lumina
 
 # 3. Add upstream remote
-git remote add upstream https://github.com/yourusername/lumina.git
+git remote add upstream https://github.com/jasoisjaso/lumina.git
 
 # 4. Install dependencies
 cd backend && npm install
@@ -392,8 +392,8 @@ SELECT * FROM users;   # Query data
 
 ## ❓ Questions?
 
-- **General Questions**: [GitHub Discussions](https://github.com/yourusername/lumina/discussions)
-- **Bug Reports**: [GitHub Issues](https://github.com/yourusername/lumina/issues)
+- **General Questions**: [GitHub Discussions](https://github.com/jasoisjaso/lumina/discussions)
+- **Bug Reports**: [GitHub Issues](https://github.com/jasoisjaso/lumina/issues)
 - **Security Issues**: Email security@example.com
 
 ## 🙏 Recognition

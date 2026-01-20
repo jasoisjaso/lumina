@@ -18,7 +18,7 @@ The easiest way to run Lumina is using Docker Compose:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/lumina.git
+git clone https://github.com/jasoisjaso/lumina.git
 cd lumina
 
 # 2. Start the application
@@ -34,7 +34,7 @@ That's it! Lumina is now running at `http://localhost:3000`
 
 ```bash
 # 1. Clone and enter directory
-git clone https://github.com/yourusername/lumina.git
+git clone https://github.com/jasoisjaso/lumina.git
 cd lumina
 
 # 2. Create environment files
@@ -54,7 +54,7 @@ Lumina runs perfectly on Raspberry Pi 4 or 5:
 
 ```bash
 # On your Raspberry Pi (ARM64)
-git clone https://github.com/yourusername/lumina.git
+git clone https://github.com/jasoisjaso/lumina.git
 cd lumina
 
 # The Docker images are multi-platform and will work automatically
@@ -299,14 +299,12 @@ chmod +x reset-database.sh
 ## Getting Help
 
 - 📖 [Full Documentation](README.md)
-- 🐛 [Report Issues](https://github.com/yourusername/lumina/issues)
-- 💬 [Ask Questions](https://github.com/yourusername/lumina/discussions)
+- 🐛 [Report Issues](https://github.com/jasoisjaso/lumina/issues)
+- 💬 [Ask Questions](https://github.com/jasoisjaso/lumina/discussions)
 - 🚀 [Deployment Guide](DEPLOYMENT.md)
 
 ## What's Next?
 
-- Learn about [Architecture](ARCHITECTURE.md)
-- Set up [Development Environment](DEVELOPMENT.md)
 - Explore [Deployment Options](DEPLOYMENT.md)
 - Read [Troubleshooting Guide](TROUBLESHOOTING.md)
 

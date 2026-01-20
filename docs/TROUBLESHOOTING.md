@@ -756,10 +756,10 @@ If your issue isn't listed here:
    ```
 
 2. **Search Existing Issues**
-   - [GitHub Issues](https://github.com/yourusername/lumina/issues)
+   - [GitHub Issues](https://github.com/jasoisjaso/lumina/issues)
 
 3. **Ask the Community**
-   - [GitHub Discussions](https://github.com/yourusername/lumina/discussions)
+   - [GitHub Discussions](https://github.com/jasoisjaso/lumina/discussions)
 
 4. **Report a Bug**
    - Include debug information (see above)

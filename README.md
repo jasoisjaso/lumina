@@ -30,7 +30,7 @@ Get Lumina running in under 2 minutes:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/lumina.git
+git clone https://github.com/jasoisjaso/lumina.git
 cd lumina
 
 # Start with Docker Compose
@@ -57,8 +57,6 @@ The setup wizard will guide you through creating your family and admin account!
 ## 📖 Documentation
 
 - **[Quick Start Guide](docs/README.md)** - Get up and running
-- **[Development Setup](docs/DEVELOPMENT.md)** - Contributing and local development
-- **[Architecture Overview](docs/ARCHITECTURE.md)** - System design and structure
 - **[Deployment Guide](docs/DEPLOYMENT.md)** - Production deployment options
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
@@ -168,7 +166,7 @@ We welcome contributions! Lumina is built with the community in mind.
 3. **Code Contributions** - Submit pull requests
 4. **Documentation** - Improve our docs
 
-See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for development setup.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
 
 ### Feedback Wanted
 
@@ -186,8 +184,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 💬 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/lumina/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/lumina/discussions)
+- **Issues**: [GitHub Issues](https://github.com/jasoisjaso/lumina/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/jasoisjaso/lumina/discussions)
 - **Documentation**: [docs/](docs/)
 
 ## 🌟 Star History
