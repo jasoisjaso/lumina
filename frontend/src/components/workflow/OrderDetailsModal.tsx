@@ -18,10 +18,24 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
   const [notes, setNotes] = useState(order.notes || '');
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [trackingSaving, setTrackingSaving] = useState(false);
 
   useEffect(() => {
     loadHistory();
+    loadExistingTracking();
   }, [order.id]);
+
+  const loadExistingTracking = () => {
+    const orderData = order.order_data;
+    const rawData = orderData?.raw_data ? JSON.parse(orderData.raw_data) : {};
+    const metaData = rawData.meta_data || [];
+
+    const trackingMeta = metaData.find((m: any) => m.key === '_tracking_number');
+    if (trackingMeta) {
+      setTrackingNumber(trackingMeta.value);
+    }
+  };
 
   const loadHistory = async () => {
     try {
@@ -64,6 +78,23 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
       alert('Failed to save notes');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveTracking = async () => {
+    if (!trackingNumber.trim()) {
+      alert('Please enter a tracking number');
+      return;
+    }
+
+    setTrackingSaving(true);
+    try {
+      await workflowAPI.updateOrderTracking(order.id, trackingNumber.trim(), 'Australia Post');
+      alert('Tracking number saved successfully! WooCommerce will send a completion email with tracking info.');
+    } catch (err) {
+      alert('Failed to save tracking number');
+    } finally {
+      setTrackingSaving(false);
     }
   };
 
@@ -187,6 +218,44 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                   Save Notes
                 </button>
               </div>
+
+              {/* Australia Post Tracking (only for Completed orders) */}
+              {order.stage.wc_status === 'completed' && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">
+                    Australia Post Tracking
+                  </h3>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={trackingNumber}
+                      onChange={(e) => setTrackingNumber(e.target.value)}
+                      placeholder="Enter tracking number"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                    <button
+                      onClick={handleSaveTracking}
+                      disabled={trackingSaving || !trackingNumber.trim()}
+                      className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {trackingSaving ? 'Saving...' : 'Save Tracking'}
+                    </button>
+                    {trackingNumber && (
+                      <a
+                        href={`https://auspost.com.au/mypost/track/#/details/${trackingNumber}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-center text-sm text-indigo-600 hover:text-indigo-800 underline"
+                      >
+                        Track on Australia Post →
+                      </a>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Saving will update WooCommerce and trigger completion email with tracking info.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Right Column */}

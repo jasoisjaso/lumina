@@ -8,12 +8,22 @@ const router = Router();
 /**
  * GET /api/v1/workflow/board
  * Get full workflow board with all stages and orders
+ * Supports filtering via query params: board_style, font, board_color, date_from, date_to
  */
 router.get('/board', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const familyId = req.user!.familyId;
-    const board = await workflowService.getBoard(familyId);
-    
+
+    // Extract filter parameters from query
+    const filters: any = {};
+    if (req.query.board_style) filters.board_style = String(req.query.board_style);
+    if (req.query.font) filters.font = String(req.query.font);
+    if (req.query.board_color) filters.board_color = String(req.query.board_color);
+    if (req.query.date_from) filters.date_from = String(req.query.date_from);
+    if (req.query.date_to) filters.date_to = String(req.query.date_to);
+
+    const board = await workflowService.getBoardWithFilters(familyId, filters);
+
     res.json({ data: board });
   } catch (error: any) {
     console.error('Get workflow board error:', error);
@@ -39,6 +49,56 @@ router.get('/stages', authenticate, async (req: AuthRequest, res: Response) => {
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Failed to load workflow stages',
+    });
+  }
+});
+
+/**
+ * GET /api/v1/workflow/filters/options
+ * Get unique filter options for customization fields
+ * Returns lists of available board styles, fonts, and colors for filter dropdowns
+ */
+router.get('/filters/options', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const familyId = req.user!.familyId;
+    const options = await workflowService.getFilterOptions(familyId);
+
+    res.json({ data: options });
+  } catch (error: any) {
+    console.error('Get filter options error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to load filter options',
+    });
+  }
+});
+
+/**
+ * PUT /api/v1/workflow/stages/:id/visibility
+ * Toggle stage visibility (show/hide columns)
+ */
+router.put('/stages/:id/visibility', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const stageId = parseInt(req.params.id);
+    const { is_hidden } = req.body;
+
+    if (typeof is_hidden !== 'boolean') {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'is_hidden boolean value is required',
+      });
+    }
+
+    await workflowService.updateStageVisibility(stageId, is_hidden);
+
+    res.json({
+      message: `Stage visibility updated to ${is_hidden ? 'hidden' : 'visible'}`,
+    });
+  } catch (error: any) {
+    console.error('Update stage visibility error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to update stage visibility',
     });
   }
 });
@@ -235,13 +295,47 @@ router.get('/overdue', authenticate, async (req: AuthRequest, res: Response) => 
   try {
     const familyId = req.user!.familyId;
     const overdueOrders = await workflowService.getOverdueOrders(familyId);
-    
+
     res.json({ data: overdueOrders });
   } catch (error: any) {
     console.error('Get overdue orders error:', error);
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Failed to load overdue orders',
+    });
+  }
+});
+
+/**
+ * PUT /api/v1/workflow/orders/:id/tracking
+ * Update order tracking information (Australia Post)
+ */
+router.put('/orders/:id/tracking', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const familyId = req.user!.familyId;
+    const { tracking_number, provider } = req.body;
+
+    if (!tracking_number) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'tracking_number is required',
+      });
+    }
+
+    await wooCommerceService.updateOrderTracking(
+      familyId,
+      orderId,
+      tracking_number,
+      provider || 'Australia Post'
+    );
+
+    res.json({ message: 'Tracking information updated successfully' });
+  } catch (error: any) {
+    console.error('Update tracking error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message || 'Failed to update tracking information',
     });
   }
 });

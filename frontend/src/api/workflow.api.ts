@@ -53,13 +53,52 @@ export interface WorkflowStats {
   unassigned_orders: number;
 }
 
+export interface FilterOptions {
+  board_styles: string[];
+  fonts: string[];
+  board_colors: string[];
+}
+
+export interface ActiveFilters {
+  board_style?: string;
+  font?: string;
+  board_color?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
 class WorkflowAPI {
   /**
-   * Get full workflow board
+   * Get full workflow board with optional filters
    */
-  async getBoard(): Promise<WorkflowBoard> {
-    const response = await apiClient.get('/workflow/board');
+  async getBoard(filters?: ActiveFilters): Promise<WorkflowBoard> {
+    const params = new URLSearchParams();
+    if (filters?.board_style) params.append('board_style', filters.board_style);
+    if (filters?.font) params.append('font', filters.font);
+    if (filters?.board_color) params.append('board_color', filters.board_color);
+    if (filters?.date_from) params.append('date_from', filters.date_from);
+    if (filters?.date_to) params.append('date_to', filters.date_to);
+
+    const queryString = params.toString();
+    const url = queryString ? `/workflow/board?${queryString}` : '/workflow/board';
+
+    const response = await apiClient.get(url);
     return response.data.data;
+  }
+
+  /**
+   * Get filter options for customization fields
+   */
+  async getFilterOptions(): Promise<FilterOptions> {
+    const response = await apiClient.get('/workflow/filters/options');
+    return response.data.data;
+  }
+
+  /**
+   * Update stage visibility
+   */
+  async updateStageVisibility(stageId: number, isHidden: boolean): Promise<void> {
+    await apiClient.put(`/workflow/stages/${stageId}/visibility`, { is_hidden: isHidden });
   }
 
   /**
@@ -119,6 +158,20 @@ class WorkflowAPI {
   async getOverdueOrders(): Promise<OrderWorkflow[]> {
     const response = await apiClient.get('/workflow/overdue');
     return response.data.data;
+  }
+
+  /**
+   * Update order tracking information
+   */
+  async updateOrderTracking(
+    orderId: number,
+    trackingNumber: string,
+    provider: string = 'Australia Post'
+  ): Promise<void> {
+    await apiClient.put(`/workflow/orders/${orderId}/tracking`, {
+      tracking_number: trackingNumber,
+      provider,
+    });
   }
 }
 

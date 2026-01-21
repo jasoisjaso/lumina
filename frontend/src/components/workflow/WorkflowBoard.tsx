@@ -14,6 +14,7 @@ import WorkflowColumn from './WorkflowColumn';
 import OrderCard from './OrderCard';
 import OrderDetailsModal from './OrderDetailsModal';
 import BulkActionsBar from './BulkActionsBar';
+import FilterBar, { FilterOptions, ActiveFilters } from './FilterBar';
 
 const WorkflowBoard: React.FC = () => {
   const [board, setBoard] = useState<WorkflowBoardType | null>(null);
@@ -22,6 +23,12 @@ const WorkflowBoard: React.FC = () => {
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
   const [detailsOrder, setDetailsOrder] = useState<OrderWorkflow | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeFilters, setActiveFilters] = useState<ActiveFilters>({});
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
+    board_styles: [],
+    fonts: [],
+    board_colors: [],
+  });
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -33,14 +40,19 @@ const WorkflowBoard: React.FC = () => {
 
   useEffect(() => {
     loadBoard();
+    loadFilterOptions();
     // Refresh every 2 minutes
     const interval = setInterval(loadBoard, 120000);
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    loadBoard();
+  }, [activeFilters]);
+
   const loadBoard = async () => {
     try {
-      const data = await workflowAPI.getBoard();
+      const data = await workflowAPI.getBoard(activeFilters);
       setBoard(data);
       setError(null);
     } catch (err: any) {
@@ -49,6 +61,20 @@ const WorkflowBoard: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadFilterOptions = async () => {
+    try {
+      const options = await workflowAPI.getFilterOptions();
+      setFilterOptions(options);
+    } catch (err: any) {
+      console.error('Failed to load filter options:', err);
+      // Don't show error to user, filters just won't populate
+    }
+  };
+
+  const handleFiltersChange = (filters: ActiveFilters) => {
+    setActiveFilters(filters);
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -139,6 +165,16 @@ const WorkflowBoard: React.FC = () => {
     }
   };
 
+  const handleToggleVisibility = async (stageId: number) => {
+    try {
+      await workflowAPI.updateStageVisibility(stageId, true);
+      await loadBoard();
+    } catch (err: any) {
+      console.error('Failed to hide column:', err);
+      alert('Failed to hide column. Please try again.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -184,6 +220,15 @@ const WorkflowBoard: React.FC = () => {
         </div>
       </div>
 
+      {/* Filter Bar */}
+      <div className="px-6 pt-4">
+        <FilterBar
+          filterOptions={filterOptions}
+          activeFilters={activeFilters}
+          onFiltersChange={handleFiltersChange}
+        />
+      </div>
+
       {/* Bulk Actions Bar */}
       {selectedOrderIds.length > 0 && (
         <BulkActionsBar
@@ -211,6 +256,7 @@ const WorkflowBoard: React.FC = () => {
                 onOrderClick={handleOrderClick}
                 onSelectOrder={handleSelectOrder}
                 selectedOrderIds={selectedOrderIds}
+                onToggleVisibility={handleToggleVisibility}
               />
             ))}
           </div>

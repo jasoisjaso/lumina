@@ -520,6 +520,191 @@ class WorkflowService {
 
     return stage || null;
   }
+
+  /**
+   * Get workflow board with customization filters applied
+   */
+  async getBoardWithFilters(
+    familyId: number,
+    filters: {
+      board_style?: string;
+      font?: string;
+      board_color?: string;
+      date_from?: string;
+      date_to?: string;
+    }
+  ): Promise<{ stages: WorkflowStage[]; orders: WorkflowOrder[] }> {
+    // Get stages (only non-hidden)
+    const stages = await knex('order_workflow_stages')
+      .where({ family_id: familyId, is_hidden: false })
+      .orderBy('position', 'asc');
+
+    // Start building order query
+    const orders = await knex('order_workflow as ow')
+      .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
+      .leftJoin('users as u', 'ow.assigned_to', 'u.id')
+      .join('cached_orders as co', 'ow.order_id', 'co.id')
+      .where('ows.family_id', familyId)
+      .where('ows.is_hidden', false) // Only show orders in visible stages
+      .select(
+        'ow.id as workflow_id',
+        'ow.order_id',
+        'ow.stage_id',
+        'ow.assigned_to',
+        'ow.priority',
+        'ow.notes',
+        'ow.last_updated',
+        'ow.created_at as workflow_created_at',
+        'ow.updated_at as workflow_updated_at',
+        'u.id as user_id',
+        'u.first_name',
+        'u.last_name',
+        'u.color as user_color',
+        'ows.id as stage_id_full',
+        'ows.name as stage_name',
+        'ows.color as stage_color',
+        'ows.position as stage_position',
+        'ows.wc_status',
+        'co.customization_details',
+        knex.raw('ROUND((julianday("now") - julianday(ow.last_updated)) * 1440) as time_in_stage')
+      )
+      .modify((queryBuilder) => {
+        // Apply customization filters using JSON extraction
+        if (filters.board_style) {
+          queryBuilder.whereRaw(
+            "json_extract(co.customization_details, '$.board_style') = ?",
+            [filters.board_style]
+          );
+        }
+
+        if (filters.font) {
+          queryBuilder.whereRaw(
+            "json_extract(co.customization_details, '$.font') = ?",
+            [filters.font]
+          );
+        }
+
+        if (filters.board_color) {
+          queryBuilder.whereRaw(
+            "json_extract(co.customization_details, '$.board_color') = ?",
+            [filters.board_color]
+          );
+        }
+
+        // Apply date range filters
+        if (filters.date_from) {
+          queryBuilder.where('co.date_created', '>=', filters.date_from);
+        }
+
+        if (filters.date_to) {
+          queryBuilder.where('co.date_created', '<=', filters.date_to);
+        }
+      });
+
+    // Get order data from cache
+    const orderIds = orders.map((o: any) => o.order_id);
+    const cachedOrders = await knex('cached_orders')
+      .whereIn('id', orderIds)
+      .select('*');
+
+    // Map cached order data to workflow orders
+    const ordersWithData = orders.map((order: any) => {
+      const orderData = cachedOrders.find((co: any) => co.id === order.order_id);
+
+      // Construct assignee object from flat columns
+      const assignee = order.user_id ? {
+        id: order.user_id,
+        first_name: order.first_name,
+        last_name: order.last_name,
+        color: order.user_color
+      } : null;
+
+      // Construct stage object from flat columns
+      const stage: any = {
+        id: order.stage_id_full,
+        name: order.stage_name,
+        color: order.stage_color,
+        position: order.stage_position,
+        wc_status: order.wc_status
+      };
+
+      return {
+        id: order.workflow_id,
+        order_id: order.order_id,
+        stage_id: order.stage_id,
+        assigned_to: order.assigned_to,
+        priority: order.priority,
+        notes: order.notes,
+        last_updated: order.last_updated,
+        created_at: order.workflow_created_at,
+        updated_at: order.workflow_updated_at,
+        order_data: orderData || null,
+        assignee,
+        stage,
+        time_in_stage: order.time_in_stage
+      };
+    });
+
+    return {
+      stages,
+      orders: ordersWithData,
+    };
+  }
+
+  /**
+   * Get unique customization values for filter dropdowns
+   */
+  async getFilterOptions(familyId: number): Promise<{
+    board_styles: string[];
+    fonts: string[];
+    board_colors: string[];
+  }> {
+    // Get all cached orders for the family that have customization details
+    const orders = await knex('cached_orders')
+      .where({ family_id: familyId })
+      .whereNotNull('customization_details')
+      .select('customization_details');
+
+    const boardStyles = new Set<string>();
+    const fonts = new Set<string>();
+    const boardColors = new Set<string>();
+
+    // Extract unique values from each order's customization details
+    for (const order of orders) {
+      try {
+        const customization = typeof order.customization_details === 'string'
+          ? JSON.parse(order.customization_details)
+          : order.customization_details;
+
+        if (customization) {
+          if (customization.board_style) boardStyles.add(customization.board_style);
+          if (customization.font) fonts.add(customization.font);
+          if (customization.board_color) boardColors.add(customization.board_color);
+        }
+      } catch (error) {
+        // Skip invalid JSON
+        console.warn('Invalid customization_details JSON:', order.customization_details);
+      }
+    }
+
+    return {
+      board_styles: Array.from(boardStyles).sort(),
+      fonts: Array.from(fonts).sort(),
+      board_colors: Array.from(boardColors).sort(),
+    };
+  }
+
+  /**
+   * Update stage visibility (show/hide column)
+   */
+  async updateStageVisibility(stageId: number, isHidden: boolean): Promise<void> {
+    await knex('order_workflow_stages')
+      .where({ id: stageId })
+      .update({
+        is_hidden: isHidden,
+        updated_at: knex.fn.now(),
+      });
+  }
 }
 
 export default new WorkflowService();

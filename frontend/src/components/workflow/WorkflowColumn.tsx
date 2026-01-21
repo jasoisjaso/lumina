@@ -1,5 +1,6 @@
 import React from 'react';
 import { useDroppable } from '@dnd-kit/core';
+import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { WorkflowStage, OrderWorkflow } from '../../api/workflow.api';
 import OrderCard from './OrderCard';
 
@@ -9,6 +10,7 @@ interface WorkflowColumnProps {
   onOrderClick: (order: OrderWorkflow) => void;
   onSelectOrder: (orderId: number, selected: boolean) => void;
   selectedOrderIds: number[];
+  onToggleVisibility?: (stageId: number) => void;
 }
 
 const WorkflowColumn: React.FC<WorkflowColumnProps> = ({
@@ -17,6 +19,7 @@ const WorkflowColumn: React.FC<WorkflowColumnProps> = ({
   onOrderClick,
   onSelectOrder,
   selectedOrderIds,
+  onToggleVisibility,
 }) => {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.id,
@@ -50,6 +53,18 @@ const WorkflowColumn: React.FC<WorkflowColumnProps> = ({
             <span className="px-2 py-0.5 bg-white bg-opacity-30 rounded text-xs font-medium">
               {orders.length}
             </span>
+            {onToggleVisibility && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleVisibility(stage.id);
+                }}
+                className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors"
+                title="Hide this column"
+              >
+                <EyeIcon className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>

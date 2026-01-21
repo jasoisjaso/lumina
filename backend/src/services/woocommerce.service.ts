@@ -3,6 +3,7 @@ import db from '../database/knex';
 import { config } from '../config';
 import { settingsService } from './settings.service';
 import workflowService from './workflow.service';
+import { extractCustomizationDetails } from '../utils/customization-extractor';
 
 /**
  * WooCommerce Sync Service
@@ -253,6 +254,18 @@ class WooCommerceService {
   async cacheOrder(familyId: number, order: WooCommerceOrder): Promise<{created: boolean; cachedOrderId: number}> {
     const customerName = `${order.billing.first_name} ${order.billing.last_name}`.trim() || 'Guest';
 
+    // Extract customization details from line items
+    let customizationDetails = null;
+    try {
+      const extracted = extractCustomizationDetails(order.line_items);
+      if (extracted) {
+        customizationDetails = JSON.stringify(extracted);
+      }
+    } catch (error: any) {
+      console.warn(`Failed to extract customization for order ${order.id}:`, error.message);
+      // Continue without customization data rather than failing the entire sync
+    }
+
     const orderData = {
       family_id: familyId,
       woocommerce_order_id: order.id,
@@ -262,6 +275,7 @@ class WooCommerceService {
       customer_name: customerName,
       total: parseFloat(order.total),
       raw_data: JSON.stringify(order),
+      customization_details: customizationDetails,
       synced_at: new Date(),
     };
 
@@ -392,6 +406,70 @@ class WooCommerceService {
       .first();
 
     return stats;
+  }
+
+  /**
+   * Update order tracking information
+   * This updates both WooCommerce and local cache
+   */
+  async updateOrderTracking(
+    familyId: number,
+    orderId: number,
+    trackingNumber: string,
+    provider: string = 'Australia Post'
+  ): Promise<void> {
+    const cachedOrder = await this.getCachedOrder(familyId, orderId);
+    if (!cachedOrder) {
+      throw new Error('Order not found');
+    }
+
+    const api = await this.getApiForFamily(familyId);
+    if (!api) {
+      throw new Error('WooCommerce API is not configured for this family');
+    }
+
+    try {
+      // Update in WooCommerce with tracking meta data
+      await api.put(`orders/${cachedOrder.woocommerce_order_id}`, {
+        meta_data: [
+          { key: '_tracking_number', value: trackingNumber },
+          { key: '_tracking_provider', value: provider },
+        ],
+      });
+
+      // Update in local cache (store in raw_data)
+      const rawData = typeof cachedOrder.raw_data === 'string'
+        ? JSON.parse(cachedOrder.raw_data)
+        : cachedOrder.raw_data;
+
+      // Add or update tracking meta data in raw_data
+      if (!rawData.meta_data) {
+        rawData.meta_data = [];
+      }
+
+      // Remove existing tracking meta if present
+      rawData.meta_data = rawData.meta_data.filter(
+        (m: any) => m.key !== '_tracking_number' && m.key !== '_tracking_provider'
+      );
+
+      // Add new tracking meta
+      rawData.meta_data.push(
+        { key: '_tracking_number', value: trackingNumber },
+        { key: '_tracking_provider', value: provider }
+      );
+
+      await db('cached_orders')
+        .where({ id: orderId })
+        .update({
+          raw_data: JSON.stringify(rawData),
+          updated_at: new Date(),
+        });
+
+      console.log(`Updated tracking for order ${cachedOrder.woocommerce_order_id}: ${trackingNumber}`);
+    } catch (error: any) {
+      console.error(`Error updating tracking for order ${cachedOrder.woocommerce_order_id}:`, error.response?.data || error.message);
+      throw new Error(`Failed to update tracking: ${error.message}`);
+    }
   }
 }
 

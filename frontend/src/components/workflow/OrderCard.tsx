@@ -48,6 +48,31 @@ const OrderCard: React.FC<OrderCardProps> = ({
   const total = orderData?.total || '0.00';
   const lineItems = orderData?.raw_data ? JSON.parse(orderData.raw_data).line_items : [];
 
+  // Parse customization details
+  const customizationDetails = orderData?.customization_details
+    ? (typeof orderData.customization_details === 'string'
+        ? JSON.parse(orderData.customization_details)
+        : orderData.customization_details)
+    : null;
+
+  // Format customization summary for display
+  const formatCustomizationSummary = (): string | null => {
+    if (!customizationDetails) return null;
+
+    const parts: string[] = [];
+    if (customizationDetails.board_style) parts.push(customizationDetails.board_style);
+    if (customizationDetails.font) parts.push(customizationDetails.font);
+    if (customizationDetails.board_color) parts.push(customizationDetails.board_color);
+    if (customizationDetails.number_of_names) {
+      const nameLabel = customizationDetails.number_of_names === 1 ? 'Name' : 'Names';
+      parts.push(`${customizationDetails.number_of_names} ${nameLabel}`);
+    }
+
+    return parts.length > 0 ? parts.join(' • ') : null;
+  };
+
+  const customizationSummary = formatCustomizationSummary();
+
   return (
     <div
       ref={setNodeRef}
@@ -77,6 +102,11 @@ const OrderCard: React.FC<OrderCardProps> = ({
               </h4>
             </div>
             <p className="text-xs text-gray-600 mt-1">{customerName}</p>
+            {customizationSummary && (
+              <p className="text-xs text-indigo-600 mt-1 font-medium">
+                {customizationSummary}
+              </p>
+            )}
           </div>
           
           {onSelect && (
