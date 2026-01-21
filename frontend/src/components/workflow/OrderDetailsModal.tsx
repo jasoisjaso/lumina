@@ -134,7 +134,9 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
               <div>
                 <h3 className="text-sm font-medium text-gray-700 mb-2">Current Stage</h3>
                 <div className="space-y-2">
-                  {stages.map((stage) => (
+                  {stages
+                    .filter((stage) => !stage.is_hidden)
+                    .map((stage) => (
                     <button
                       key={stage.id}
                       onClick={() => handleStageChange(stage.id)}

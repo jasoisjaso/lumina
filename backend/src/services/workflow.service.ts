@@ -7,6 +7,7 @@ interface WorkflowStage {
   color: string;
   position: number;
   wc_status: string | null;
+  is_hidden: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -523,6 +524,7 @@ class WorkflowService {
 
   /**
    * Get workflow board with customization filters applied
+   * Returns ALL stages (including hidden) with is_hidden flag so frontend can manage visibility
    */
   async getBoardWithFilters(
     familyId: number,
@@ -534,18 +536,18 @@ class WorkflowService {
       date_to?: string;
     }
   ): Promise<{ stages: WorkflowStage[]; orders: WorkflowOrder[] }> {
-    // Get stages (only non-hidden)
+    // Get ALL stages including hidden ones - frontend will manage visibility display
     const stages = await knex('order_workflow_stages')
-      .where({ family_id: familyId, is_hidden: false })
+      .where({ family_id: familyId })
       .orderBy('position', 'asc');
 
-    // Start building order query
+    // Start building order query - get ALL orders including those in hidden stages
+    // Frontend will filter display based on stage visibility
     const orders = await knex('order_workflow as ow')
       .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
       .leftJoin('users as u', 'ow.assigned_to', 'u.id')
       .join('cached_orders as co', 'ow.order_id', 'co.id')
       .where('ows.family_id', familyId)
-      .where('ows.is_hidden', false) // Only show orders in visible stages
       .select(
         'ow.id as workflow_id',
         'ow.order_id',
@@ -565,6 +567,7 @@ class WorkflowService {
         'ows.color as stage_color',
         'ows.position as stage_position',
         'ows.wc_status',
+        'ows.is_hidden as stage_is_hidden',
         'co.customization_details',
         knex.raw('ROUND((julianday("now") - julianday(ow.last_updated)) * 1440) as time_in_stage')
       )
@@ -625,7 +628,8 @@ class WorkflowService {
         name: order.stage_name,
         color: order.stage_color,
         position: order.stage_position,
-        wc_status: order.wc_status
+        wc_status: order.wc_status,
+        is_hidden: order.stage_is_hidden
       };
 
       return {

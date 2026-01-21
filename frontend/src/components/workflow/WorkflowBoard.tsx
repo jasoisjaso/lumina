@@ -15,6 +15,7 @@ import OrderCard from './OrderCard';
 import OrderDetailsModal from './OrderDetailsModal';
 import BulkActionsBar from './BulkActionsBar';
 import FilterBar, { FilterOptions, ActiveFilters } from './FilterBar';
+import HiddenColumnsManager from './HiddenColumnsManager';
 
 const WorkflowBoard: React.FC = () => {
   const [board, setBoard] = useState<WorkflowBoardType | null>(null);
@@ -166,12 +167,56 @@ const WorkflowBoard: React.FC = () => {
   };
 
   const handleToggleVisibility = async (stageId: number) => {
+    if (!board) return;
+    
+    // Find the stage and toggle its visibility
+    const stage = board.stages.find((s) => s.id === stageId);
+    if (!stage) return;
+    
+    const newIsHidden = !stage.is_hidden;
+    
     try {
-      await workflowAPI.updateStageVisibility(stageId, true);
+      // Optimistic update
+      const updatedStages = board.stages.map((s) =>
+        s.id === stageId ? { ...s, is_hidden: newIsHidden } : s
+      );
+      setBoard({ ...board, stages: updatedStages });
+      
+      await workflowAPI.updateStageVisibility(stageId, newIsHidden);
+    } catch (err: any) {
+      console.error('Failed to toggle column visibility:', err);
+      alert('Failed to update column visibility. Please try again.');
+      // Revert on error
+      loadBoard();
+    }
+  };
+
+  const handleShowColumn = async (stageId: number) => {
+    try {
+      await workflowAPI.updateStageVisibility(stageId, false);
       await loadBoard();
     } catch (err: any) {
-      console.error('Failed to hide column:', err);
-      alert('Failed to hide column. Please try again.');
+      console.error('Failed to show column:', err);
+      alert('Failed to show column. Please try again.');
+    }
+  };
+
+  const handleShowAllColumns = async () => {
+    if (!board) return;
+    
+    const hiddenStages = board.stages.filter((s) => s.is_hidden);
+    
+    try {
+      // Show all hidden columns
+      await Promise.all(
+        hiddenStages.map((stage) =>
+          workflowAPI.updateStageVisibility(stage.id, false)
+        )
+      );
+      await loadBoard();
+    } catch (err: any) {
+      console.error('Failed to show all columns:', err);
+      alert('Failed to show all columns. Please try again.');
     }
   };
 
@@ -208,15 +253,22 @@ const WorkflowBoard: React.FC = () => {
               {board.orders.length} active orders
             </p>
           </div>
-          <button
-            onClick={loadBoard}
-            className="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center"
-          >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh
-          </button>
+          <div className="flex items-center space-x-3">
+            <HiddenColumnsManager
+              stages={board.stages}
+              onShowColumn={handleShowColumn}
+              onShowAll={handleShowAllColumns}
+            />
+            <button
+              onClick={loadBoard}
+              className="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -248,7 +300,9 @@ const WorkflowBoard: React.FC = () => {
           onDragEnd={handleDragEnd}
         >
           <div className="flex space-x-4 h-full min-w-min">
-            {board.stages.map((stage) => (
+            {board.stages
+              .filter((stage) => !stage.is_hidden)
+              .map((stage) => (
               <WorkflowColumn
                 key={stage.id}
                 stage={stage}

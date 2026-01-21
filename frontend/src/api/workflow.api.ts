@@ -7,6 +7,7 @@ export interface WorkflowStage {
   color: string;
   position: number;
   wc_status: string | null;
+  is_hidden: boolean;
   created_at: string;
   updated_at: string;
 }

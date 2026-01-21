@@ -43,7 +43,9 @@ const BulkActionsBar: React.FC<BulkActionsBarProps> = ({
 
           {isOpen && (
             <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-lg shadow-xl z-10 py-2">
-              {stages.map((stage) => (
+              {stages
+                .filter((stage) => !stage.is_hidden)
+                .map((stage) => (
                 <button
                   key={stage.id}
                   onClick={() => handleMoveTo(stage.id)}

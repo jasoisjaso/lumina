@@ -1,6 +1,6 @@
 import React from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import { EyeSlashIcon } from '@heroicons/react/24/outline';
 import { WorkflowStage, OrderWorkflow } from '../../api/workflow.api';
 import OrderCard from './OrderCard';
 
@@ -62,7 +62,7 @@ const WorkflowColumn: React.FC<WorkflowColumnProps> = ({
                 className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors"
                 title="Hide this column"
               >
-                <EyeIcon className="h-4 w-4" />
+                <EyeSlashIcon className="h-4 w-4" />
               </button>
             )}
           </div>
