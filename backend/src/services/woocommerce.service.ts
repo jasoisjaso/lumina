@@ -53,105 +53,50 @@ export interface SyncResult {
 }
 
 class WooCommerceService {
-  private api: WooCommerceRestApi | null = null;
-  private isConfigured: boolean = false;
-
-  constructor() {
-    this.initializeApi();
-  }
-
-  /**
-   * Initialize WooCommerce API client
-   */
-  private initializeApi(): void {
-    try {
-      const storeUrl = config.woocommerce?.storeUrl || process.env.WC_STORE_URL;
-      const consumerKey = config.woocommerce?.consumerKey || process.env.WC_CONSUMER_KEY;
-      const consumerSecret = config.woocommerce?.consumerSecret || process.env.WC_CONSUMER_SECRET;
-
-      if (!storeUrl || !consumerKey || !consumerSecret) {
-        console.warn('WooCommerce credentials not configured. Sync will be disabled.');
-        this.isConfigured = false;
-        return;
-      }
-
-      this.api = new WooCommerceRestApi({
-        url: storeUrl,
-        consumerKey: consumerKey,
-        consumerSecret: consumerSecret,
-        version: 'wc/v3',
-        queryStringAuth: true, // Force authentication via query string for HTTPS
-      });
-
-      this.isConfigured = true;
-      console.log('WooCommerce API client initialized');
-    } catch (error) {
-      console.error('Failed to initialize WooCommerce API:', error);
-      this.isConfigured = false;
-    }
-  }
-
-  /**
-   * Check if WooCommerce is properly configured
-   */
-  isAvailable(): boolean {
-    return this.isConfigured && this.api !== null;
-  }
-
   /**
    * Get WooCommerce API client for a specific family
-   * Checks family settings first, falls back to environment variables
+   * Checks family settings and returns a configured client if available.
    */
   private async getApiForFamily(familyId: number): Promise<WooCommerceRestApi | null> {
     try {
-      // Check family settings first
       const integrationSettings = await settingsService.getSettings(familyId, 'integrations');
       const wcSettings = integrationSettings?.woocommerce;
 
       if (wcSettings && wcSettings.enabled && wcSettings.storeUrl && wcSettings.consumerKey && wcSettings.consumerSecret) {
-        // Use family-specific credentials from settings
         return new WooCommerceRestApi({
           url: wcSettings.storeUrl,
           consumerKey: wcSettings.consumerKey,
           consumerSecret: wcSettings.consumerSecret,
           version: 'wc/v3',
+          queryStringAuth: true,
         });
       }
-
-      // Fall back to global API if configured
-      if (this.isAvailable()) {
-        return this.api;
-      }
-
       return null;
     } catch (error) {
-      console.error('Error getting API for family:', error);
+      console.error(`Error getting WooCommerce API client for family ${familyId}:`, error);
       return null;
     }
   }
 
   /**
-   * Check if WooCommerce is enabled for a family
+   * Check if WooCommerce is properly configured and enabled for a family
    */
-  async isEnabledForFamily(familyId: number): Promise<boolean> {
-    try {
-      const integrationSettings = await settingsService.getSettings(familyId, 'integrations');
-      return integrationSettings?.woocommerce?.enabled === true;
-    } catch (error) {
-      return false;
-    }
+  async isAvailableForFamily(familyId: number): Promise<boolean> {
+    const api = await this.getApiForFamily(familyId);
+    return api !== null;
   }
 
   /**
-   * Fetch orders from WooCommerce API
+   * Fetch orders from WooCommerce API for a specific family
    */
-  async fetchOrders(params: any = {}): Promise<WooCommerceOrder[]> {
-    if (!this.isAvailable()) {
-      throw new Error('WooCommerce API is not configured');
+  async fetchOrders(familyId: number, params: any = {}): Promise<WooCommerceOrder[]> {
+    const api = await this.getApiForFamily(familyId);
+    if (!api) {
+      throw new Error('WooCommerce API is not configured for this family');
     }
 
     try {
-      const response = await this.api!.get('orders', {
+      const response = await api.get('orders', {
         per_page: 100,
         orderby: 'date',
         order: 'desc',
@@ -166,32 +111,16 @@ class WooCommerceService {
   }
 
   /**
-   * Fetch a single order from WooCommerce
+   * Update order status in WooCommerce for a specific family
    */
-  async fetchOrder(orderId: number): Promise<WooCommerceOrder> {
-    if (!this.isAvailable()) {
-      throw new Error('WooCommerce API is not configured');
+  async updateOrderStatus(familyId: number, orderId: number, status: string): Promise<WooCommerceOrder> {
+    const api = await this.getApiForFamily(familyId);
+    if (!api) {
+      throw new Error('WooCommerce API is not configured for this family');
     }
 
     try {
-      const response = await this.api!.get(`orders/${orderId}`);
-      return response.data as WooCommerceOrder;
-    } catch (error: any) {
-      console.error(`Error fetching order ${orderId}:`, error.response?.data || error.message);
-      throw new Error(`Failed to fetch order: ${error.message}`);
-    }
-  }
-
-  /**
-   * Update order status in WooCommerce
-   */
-  async updateOrderStatus(orderId: number, status: string): Promise<WooCommerceOrder> {
-    if (!this.isAvailable()) {
-      throw new Error('WooCommerce API is not configured');
-    }
-
-    try {
-      const response = await this.api!.put(`orders/${orderId}`, { status });
+      const response = await api.put(`orders/${orderId}`, { status });
       return response.data as WooCommerceOrder;
     } catch (error: any) {
       console.error(`Error updating order ${orderId}:`, error.response?.data || error.message);
@@ -211,61 +140,79 @@ class WooCommerceService {
       errors: [],
     };
 
-    // Check if WooCommerce is enabled for this family
-    const isEnabled = await this.isEnabledForFamily(familyId);
-    if (!isEnabled) {
-      result.success = false;
-      result.errors.push('WooCommerce is not enabled for this family');
-      return result;
-    }
-
-    // Get family-specific API client
     const familyApi = await this.getApiForFamily(familyId);
     if (!familyApi) {
       result.success = false;
-      result.errors.push('WooCommerce API is not configured for this family');
+      result.errors.push('WooCommerce is not configured for this family.');
       return result;
     }
 
     try {
-      // Calculate date range
       const afterDate = new Date();
       afterDate.setDate(afterDate.getDate() - daysBack);
 
-      // Fetch orders from WooCommerce using family API
+      // Fetch orders with status=any to get ALL statuses including custom ones from Order Status Manager plugin
       const response = await familyApi.get('orders', {
         after: afterDate.toISOString(),
         per_page: 100,
+        status: 'any', // This will include custom statuses from plugins
       });
       const orders = response.data as WooCommerceOrder[];
 
       console.log(`Fetched ${orders.length} orders from WooCommerce for family ${familyId}`);
 
+      // Extract unique order statuses and their counts
+      const statusCounts = new Map<string, number>();
+      for (const order of orders) {
+        statusCounts.set(order.status, (statusCounts.get(order.status) || 0) + 1);
+      }
+
+      const wcStatuses = Array.from(statusCounts.entries()).map(([status, count]) => ({
+        status,
+        count,
+      }));
+
+      console.log(`Detected WooCommerce statuses:`, wcStatuses);
+
+      // Sync workflow stages from WooCommerce statuses (will create stages for custom statuses)
+      try {
+        await workflowService.syncWorkflowStagesFromWooCommerce(familyId, wcStatuses);
+      } catch (error: any) {
+        console.error(`Error syncing workflow stages:`, error.message);
+      }
+
       // Process each order
       for (const order of orders) {
         try {
-          await this.cacheOrder(familyId, order);
+          const { created, cachedOrderId } = await this.cacheOrder(familyId, order);
           result.ordersProcessed++;
+          if (created) {
+            result.ordersCreated++;
+          } else {
+            result.ordersUpdated++;
+          }
+
+          // Sync order workflow stage from WooCommerce status (bi-directional sync)
+          if (cachedOrderId) {
+            try {
+              await workflowService.syncOrderStageFromWooCommerce(
+                cachedOrderId,
+                familyId,
+                order.status
+              );
+            } catch (error: any) {
+              console.error(`Error syncing workflow stage for order ${order.id}:`, error.message);
+            }
+          }
         } catch (error: any) {
           console.error(`Error processing order ${order.id}:`, error.message);
           result.errors.push(`Order ${order.id}: ${error.message}`);
         }
       }
 
-      // Determine created vs updated
-      // (This is a simplified approach; you might want to track this more precisely)
-      const existingCount = await db('cached_orders')
-        .where({ family_id: familyId })
-        .count('id as count')
-        .first();
-
-      const existingCountNum = existingCount ? Number(existingCount.count) : 0;
-      result.ordersCreated = Math.min(result.ordersProcessed, result.ordersProcessed - existingCountNum);
-      result.ordersUpdated = result.ordersProcessed - result.ordersCreated;
-
-      console.log(`Sync complete: ${result.ordersCreated} created, ${result.ordersUpdated} updated`);
+      console.log(`Sync complete for family ${familyId}: ${result.ordersCreated} created, ${result.ordersUpdated} updated`);
     } catch (error: any) {
-      console.error('Sync failed:', error.message);
+      console.error(`Sync failed for family ${familyId}:`, error.response?.data || error.message);
       result.success = false;
       result.errors.push(error.message);
     }
@@ -276,7 +223,7 @@ class WooCommerceService {
   /**
    * Cache a single order in the database
    */
-  async cacheOrder(familyId: number, order: WooCommerceOrder): Promise<void> {
+  async cacheOrder(familyId: number, order: WooCommerceOrder): Promise<{created: boolean; cachedOrderId: number}> {
     const customerName = `${order.billing.first_name} ${order.billing.last_name}`.trim() || 'Guest';
 
     const orderData = {
@@ -291,31 +238,27 @@ class WooCommerceService {
       synced_at: new Date(),
     };
 
-    // Check if order already exists
     const existing = await db('cached_orders')
-      .where({ woocommerce_order_id: order.id })
+      .where({ family_id: familyId, woocommerce_order_id: order.id })
       .first();
 
     if (existing) {
-      // Update existing order
       await db('cached_orders')
-        .where({ woocommerce_order_id: order.id })
+        .where({ id: existing.id })
         .update({
           ...orderData,
           updated_at: new Date(),
         });
+      return { created: false, cachedOrderId: existing.id };
     } else {
-      // Insert new order
-      const [newOrderId] = await db('cached_orders').insert(orderData);
+      const [newOrderId] = await db('cached_orders').insert(orderData).returning('id');
+      const newCachedId = (typeof newOrderId === 'number') ? newOrderId : newOrderId.id;
 
-      // Add new order to workflow board
-      try {
-        await workflowService.addOrder(newOrderId, familyId);
-        console.log(`Added WooCommerce order ${order.id} (cached ID: ${newOrderId}) to workflow board`);
-      } catch (error: any) {
-        console.error(`Failed to add order ${order.id} to workflow:`, error.message);
-        // Don't fail the entire sync if workflow add fails
-      }
+      // Don't automatically add to workflow here - let syncOrderStageFromWooCommerce handle it
+      // This prevents the "No workflow stages configured" error
+      console.log(`Cached WooCommerce order ${order.id} (cached ID: ${newCachedId})`);
+
+      return { created: true, cachedOrderId: newCachedId };
     }
   }
 
@@ -376,42 +319,16 @@ class WooCommerceService {
   }
 
   /**
-   * Get a cached order by WooCommerce order ID
-   */
-  async getCachedOrderByWooCommerceId(familyId: number, woocommerceOrderId: number): Promise<CachedOrder | null> {
-    const order = await db('cached_orders')
-      .where({ family_id: familyId, woocommerce_order_id: woocommerceOrderId })
-      .first();
-
-    if (!order) {
-      return null;
-    }
-
-    return {
-      ...order,
-      raw_data: typeof order.raw_data === 'string' ? JSON.parse(order.raw_data) : order.raw_data,
-    };
-  }
-
-  /**
    * Update cached order and sync to WooCommerce
    */
   async updateCachedOrderStatus(familyId: number, orderId: number, newStatus: string): Promise<CachedOrder> {
-    // Get cached order
     const cachedOrder = await this.getCachedOrder(familyId, orderId);
     if (!cachedOrder) {
       throw new Error('Order not found');
     }
 
-    // Update in WooCommerce if API is available
-    if (this.isAvailable()) {
-      try {
-        await this.updateOrderStatus(cachedOrder.woocommerce_order_id, newStatus);
-      } catch (error: any) {
-        console.error('Failed to update order in WooCommerce:', error.message);
-        throw new Error('Failed to sync status to WooCommerce');
-      }
-    }
+    // Update in WooCommerce
+    await this.updateOrderStatus(familyId, cachedOrder.woocommerce_order_id, newStatus);
 
     // Update in local cache
     await db('cached_orders')
@@ -422,7 +339,6 @@ class WooCommerceService {
         updated_at: new Date(),
       });
 
-    // Return updated order
     const updatedOrder = await this.getCachedOrder(familyId, orderId);
     if (!updatedOrder) {
       throw new Error('Failed to retrieve updated order');
@@ -449,22 +365,6 @@ class WooCommerceService {
       .first();
 
     return stats;
-  }
-
-  /**
-   * Delete old cached orders (cleanup)
-   */
-  async cleanupOldOrders(familyId: number, daysToKeep: number = 90): Promise<number> {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-    const deleted = await db('cached_orders')
-      .where({ family_id: familyId })
-      .where('date_created', '<', cutoffDate)
-      .delete();
-
-    console.log(`Deleted ${deleted} old orders for family ${familyId}`);
-    return deleted;
   }
 }
 

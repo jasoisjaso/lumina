@@ -22,13 +22,7 @@ export class SyncOrdersJob {
    */
   start(): void {
     if (this.intervalId) {
-      console.log('Sync job is already running');
-      return;
-    }
-
-    // Check if WooCommerce is configured
-    if (!woocommerceService.isAvailable()) {
-      console.warn('WooCommerce sync job disabled: API not configured');
+      console.log('WooCommerce sync job is already running');
       return;
     }
 

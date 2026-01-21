@@ -80,9 +80,17 @@ class WorkflowService {
       .leftJoin('users as u', 'ow.assigned_to', 'u.id')
       .where('ows.family_id', familyId)
       .select(
-        'ow.*',
+        'ow.id',
+        'ow.order_id',
+        'ow.stage_id',
+        'ow.assigned_to',
+        'ow.priority',
+        'ow.notes',
+        'ow.last_updated',
+        'ow.created_at',
+        'ow.updated_at',
         knex.raw('json_object("id", u.id, "first_name", u.first_name, "last_name", u.last_name, "color", u.color) as assignee'),
-        knex.raw('json_object("id", ows.id, "name", ows.name, "color", ows.color, "position", ows.position) as stage'),
+        knex.raw('json_object("id", ows.id, "name", ows.name, "color", ows.color, "position", ows.position, "wc_status", ows.wc_status) as stage'),
         knex.raw('ROUND((julianday("now") - julianday(ow.last_updated)) * 1440) as time_in_stage')
       );
 
@@ -293,6 +301,190 @@ class WorkflowService {
       .select('ow.*');
 
     return orders;
+  }
+
+  /**
+   * Sync workflow stages from WooCommerce order statuses
+   * Detects custom statuses from Order Status Manager plugin
+   */
+  async syncWorkflowStagesFromWooCommerce(
+    familyId: number,
+    wcStatuses: Array<{ status: string; count: number }>
+  ): Promise<void> {
+    console.log(`Syncing workflow stages for family ${familyId} from WooCommerce statuses:`, wcStatuses);
+
+    // Define status colors and display names
+    const statusConfig: Record<string, { name: string; color: string; position: number }> = {
+      'pending': { name: 'Pending Payment', color: '#F59E0B', position: 0 },
+      'processing': { name: 'Processing', color: '#3B82F6', position: 1 },
+      'on-hold': { name: 'On Hold', color: '#6B7280', position: 2 },
+      'completed': { name: 'Completed', color: '#10B981', position: 10 },
+      'cancelled': { name: 'Cancelled', color: '#6B7280', position: 11 },
+      'refunded': { name: 'Refunded', color: '#EF4444', position: 12 },
+      'failed': { name: 'Failed', color: '#DC2626', position: 13 },
+      // Custom statuses from Order Status Manager plugin
+      'design': { name: 'Design', color: '#8B5CF6', position: 3 },
+      'draft': { name: 'Draft', color: '#A78BFA', position: 4 },
+    };
+
+    // Get existing stages for this family
+    const existingStages = await this.getStages(familyId);
+    const existingWcStatuses = new Set(existingStages.map(s => s.wc_status).filter(Boolean));
+
+    // Create stages for new WooCommerce statuses
+    const newStages: Array<{ family_id: number; name: string; color: string; position: number; wc_status: string }> = [];
+
+    for (const { status } of wcStatuses) {
+      if (!existingWcStatuses.has(status)) {
+        const config = statusConfig[status] || {
+          name: status.charAt(0).toUpperCase() + status.slice(1).replace(/-/g, ' '),
+          color: '#6366F1',
+          position: Object.keys(statusConfig).length + newStages.length,
+        };
+
+        newStages.push({
+          family_id: familyId,
+          name: config.name,
+          color: config.color,
+          position: config.position,
+          wc_status: status,
+        });
+
+        console.log(`Creating new workflow stage: ${config.name} (${status})`);
+      }
+    }
+
+    // Insert new stages
+    if (newStages.length > 0) {
+      await knex('order_workflow_stages').insert(newStages);
+      console.log(`Created ${newStages.length} new workflow stages`);
+    }
+  }
+
+  /**
+   * Update order workflow stage and sync to WooCommerce
+   * This is called when user drags an order to a new stage in the UI
+   */
+  async updateOrderStageWithWooCommerceSync(
+    orderId: number,
+    stageId: number,
+    changedBy: number,
+    wooCommerceService?: any
+  ): Promise<void> {
+    // Get the new stage details
+    const newStage = await knex('order_workflow_stages').where({ id: stageId }).first();
+
+    if (!newStage) {
+      throw new Error('Stage not found');
+    }
+
+    // Get the cached order to find WooCommerce order ID
+    const cachedOrder = await knex('cached_orders').where({ id: orderId }).first();
+
+    if (!cachedOrder) {
+      throw new Error('Order not found');
+    }
+
+    // Update local workflow first
+    await this.updateOrder(orderId, { stage_id: stageId }, changedBy);
+
+    // If this stage maps to a WooCommerce status, update WooCommerce
+    if (newStage.wc_status && wooCommerceService) {
+      try {
+        console.log(`Syncing order ${cachedOrder.wc_order_id} status to WooCommerce: ${newStage.wc_status}`);
+
+        await wooCommerceService.updateOrderStatus(
+          cachedOrder.family_id,
+          cachedOrder.wc_order_id,
+          newStage.wc_status
+        );
+
+        console.log(`Successfully synced order ${cachedOrder.wc_order_id} to WooCommerce`);
+      } catch (error) {
+        console.error(`Failed to sync order status to WooCommerce:`, error);
+        // Don't throw - we still want the local update to persist
+      }
+    }
+  }
+
+  /**
+   * Sync order workflow stage from WooCommerce status
+   * This is called during WooCommerce sync to update Lumina when status changes in WooCommerce
+   */
+  async syncOrderStageFromWooCommerce(
+    orderId: number,
+    familyId: number,
+    wcStatus: string
+  ): Promise<void> {
+    // Get or create workflow entry
+    let workflowEntry = await knex('order_workflow').where({ order_id: orderId }).first();
+
+    // Find the stage that matches this WooCommerce status
+    const matchingStage = await knex('order_workflow_stages')
+      .where({ family_id: familyId, wc_status: wcStatus })
+      .first();
+
+    if (!matchingStage) {
+      // No matching stage, use first stage as fallback
+      const firstStage = await knex('order_workflow_stages')
+        .where({ family_id: familyId })
+        .orderBy('position', 'asc')
+        .first();
+
+      if (!firstStage) {
+        console.error(`No workflow stages exist for family ${familyId}`);
+        return;
+      }
+
+      if (!workflowEntry) {
+        // Create new workflow entry
+        await knex('order_workflow').insert({
+          order_id: orderId,
+          stage_id: firstStage.id,
+          priority: 0,
+        });
+      }
+      return;
+    }
+
+    if (!workflowEntry) {
+      // Create new workflow entry with the matching stage
+      await knex('order_workflow').insert({
+        order_id: orderId,
+        stage_id: matchingStage.id,
+        priority: 0,
+      });
+    } else if (workflowEntry.stage_id !== matchingStage.id) {
+      // Update stage if it changed
+      await knex('order_workflow')
+        .where({ order_id: orderId })
+        .update({
+          stage_id: matchingStage.id,
+          last_updated: knex.fn.now(),
+        });
+
+      // Record history
+      await knex('order_workflow_history').insert({
+        order_id: orderId,
+        from_stage_id: workflowEntry.stage_id,
+        to_stage_id: matchingStage.id,
+        changed_by: 1, // System user
+        notes: 'Synced from WooCommerce',
+      });
+
+      console.log(`Updated order ${orderId} workflow stage from WooCommerce: ${wcStatus}`);
+    }
+  }
+
+  /**
+   * Get stage by WooCommerce status
+   */
+  async getStageByWcStatus(familyId: number, wcStatus: string): Promise<WorkflowStage | null> {
+    const stage = await knex('order_workflow_stages')
+      .where({ family_id: familyId, wc_status: wcStatus })
+      .first();
+
+    return stage || null;
   }
 }
 

@@ -114,8 +114,7 @@ class SettingsService {
       return settingsData;
     }
 
-    // Return default settings if not found
-    return this.getDefaultSettings(settingsType);
+    return null;
   }
 
   /**

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import workflowService from '../services/workflow.service';
+import wooCommerceService from '../services/woocommerce.service';
 
 const router = Router();
 
@@ -82,16 +83,37 @@ router.put('/orders/:id', authenticate, async (req: AuthRequest, res: Response) 
   try {
     const orderId = parseInt(req.params.id);
     const userId = req.user!.userId;
+    const familyId = req.user!.familyId;
     const { stage_id, assigned_to, priority, notes } = req.body;
 
-    const updates: any = {};
-    if (stage_id !== undefined) updates.stage_id = stage_id;
-    if (assigned_to !== undefined) updates.assigned_to = assigned_to;
-    if (priority !== undefined) updates.priority = priority;
-    if (notes !== undefined) updates.notes = notes;
+    // If stage is being updated, use bi-directional sync method
+    if (stage_id !== undefined) {
+      await workflowService.updateOrderStageWithWooCommerceSync(
+        orderId,
+        stage_id,
+        userId,
+        wooCommerceService
+      );
 
-    await workflowService.updateOrder(orderId, updates, userId);
-    
+      // Update other fields if provided
+      if (assigned_to !== undefined || priority !== undefined || notes !== undefined) {
+        const otherUpdates: any = {};
+        if (assigned_to !== undefined) otherUpdates.assigned_to = assigned_to;
+        if (priority !== undefined) otherUpdates.priority = priority;
+        if (notes !== undefined) otherUpdates.notes = notes;
+
+        await workflowService.updateOrder(orderId, otherUpdates, userId);
+      }
+    } else {
+      // No stage change, just update other fields
+      const updates: any = {};
+      if (assigned_to !== undefined) updates.assigned_to = assigned_to;
+      if (priority !== undefined) updates.priority = priority;
+      if (notes !== undefined) updates.notes = notes;
+
+      await workflowService.updateOrder(orderId, updates, userId);
+    }
+
     res.json({ message: 'Order updated successfully' });
   } catch (error: any) {
     console.error('Update order workflow error:', error);
@@ -109,6 +131,7 @@ router.put('/orders/:id', authenticate, async (req: AuthRequest, res: Response) 
 router.post('/bulk-update', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
+    const familyId = req.user!.familyId;
     const { order_ids, stage_id, assigned_to, priority } = req.body;
 
     if (!order_ids || !Array.isArray(order_ids) || order_ids.length === 0) {
@@ -118,16 +141,44 @@ router.post('/bulk-update', authenticate, async (req: AuthRequest, res: Response
       });
     }
 
-    await workflowService.bulkUpdate(
-      {
-        order_ids,
-        stage_id,
-        assigned_to,
-        priority,
-      },
-      userId
-    );
-    
+    // If stage is being updated, sync each order with WooCommerce
+    if (stage_id !== undefined) {
+      for (const orderId of order_ids) {
+        try {
+          await workflowService.updateOrderStageWithWooCommerceSync(
+            orderId,
+            stage_id,
+            userId,
+            wooCommerceService
+          );
+        } catch (error: any) {
+          console.error(`Error updating order ${orderId}:`, error.message);
+        }
+      }
+
+      // Update other fields if provided
+      if (assigned_to !== undefined || priority !== undefined) {
+        await workflowService.bulkUpdate(
+          {
+            order_ids,
+            assigned_to,
+            priority,
+          },
+          userId
+        );
+      }
+    } else {
+      // No stage change, just update other fields
+      await workflowService.bulkUpdate(
+        {
+          order_ids,
+          assigned_to,
+          priority,
+        },
+        userId
+      );
+    }
+
     res.json({ message: `${order_ids.length} orders updated successfully` });
   } catch (error: any) {
     console.error('Bulk update error:', error);

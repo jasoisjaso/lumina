@@ -163,18 +163,18 @@ router.post('/sync', async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if WooCommerce is available
-    if (!woocommerceService.isAvailable()) {
+    // Check if WooCommerce is available for this family
+    const isWooCommerceAvailable = await woocommerceService.isAvailableForFamily(req.user.familyId);
+    if (!isWooCommerceAvailable) {
       res.status(503).json({
         error: 'Service Unavailable',
-        message: 'WooCommerce API is not configured',
+        message: 'WooCommerce API is not configured for this family',
       });
       return;
     }
 
     // Trigger sync for the user's family
     const daysBack = req.body.daysBack ? parseInt(req.body.daysBack) : 30;
-
     const result = await woocommerceService.syncOrdersForFamily(req.user.familyId, daysBack);
 
     if (result.success) {
@@ -260,10 +260,11 @@ router.get('/sync/status', async (req: AuthRequest, res: Response): Promise<void
     }
 
     const status = syncOrdersJob.getStatus();
+    const isWooCommerceAvailable = await woocommerceService.isAvailableForFamily(req.user.familyId);
 
     res.status(200).json({
       syncJob: status,
-      woocommerceConfigured: woocommerceService.isAvailable(),
+      woocommerceConfigured: isWooCommerceAvailable,
     });
   } catch (error: any) {
     console.error('Error getting sync status:', error);

@@ -97,17 +97,19 @@ router.post('/initialize', async (req: Request, res: Response): Promise<void> =>
     }
 
     // Create family
-    const [familyId] = await trx('families').insert({
+    const [familyData] = await trx('families').insert({
       name: familyName,
       created_at: new Date(),
       updated_at: new Date(),
     }).returning('id');
+    const familyId = (typeof familyData === 'number') ? familyData : familyData.id;
+
 
     // Hash admin password
     const passwordHash = await bcrypt.hash(adminPassword, 10);
 
     // Create admin user
-    const [userId] = await trx('users').insert({
+    const [userData] = await trx('users').insert({
       family_id: familyId,
       email: adminEmail.toLowerCase(),
       password_hash: passwordHash,
@@ -119,6 +121,7 @@ router.post('/initialize', async (req: Request, res: Response): Promise<void> =>
       created_at: new Date(),
       updated_at: new Date(),
     }).returning('id');
+    const userId = (typeof userData === 'number') ? userData : userData.id;
 
     // Configure integrations if provided
     const integrationSettings: any = {
@@ -238,12 +241,36 @@ router.post('/initialize', async (req: Request, res: Response): Promise<void> =>
     await trx.rollback();
     console.error('Setup initialization error:', error);
 
-    // Handle unique constraint violations
+    // Handle unique constraint violations and other db errors
     if (error.code === 'SQLITE_CONSTRAINT' || error.code === '23505') {
-      res.status(409).json({
-        error: 'Conflict',
-        message: 'Email address already in use',
-      });
+      if (error.message.includes('FOREIGN KEY')) {
+        res.status(500).json({
+          error: 'Database Error',
+          message: 'A foreign key constraint failed. This is an internal server issue.',
+          details: error.message,
+        });
+      } else if (error.message.includes('UNIQUE')) {
+        // This can happen in a race condition (e.g., double-click on setup button).
+        // Check if a family was created by a concurrent request.
+        const familyCheck = await db('families').count('* as count').first();
+        if (familyCheck && parseInt(familyCheck.count as string) > 0) {
+          res.status(409).json({
+            error: 'Conflict',
+            message: 'Setup appears to have just been completed. Please try logging in.',
+          });
+        } else {
+          res.status(409).json({
+            error: 'Conflict',
+            message: 'Email address already in use.',
+          });
+        }
+      } else {
+         res.status(500).json({
+          error: 'Database Error',
+          message: 'A database constraint was violated.',
+          details: error.message,
+        });
+      }
       return;
     }
 
@@ -281,10 +308,22 @@ router.post('/validate-email', async (req: Request, res: Response): Promise<void
       message: existingUser ? 'Email already in use' : 'Email is available',
     });
   } catch (error: any) {
+    // If the 'users' table does not exist, it means this is the first setup,
+    // so the email is considered available.
+    if (error.message && error.message.includes('SQLITE_ERROR: no such table: users')) {
+      console.warn('SQLITE_ERROR: No such table users during email validation. Assuming email is available for initial setup.');
+      res.status(200).json({
+        available: true,
+        message: 'Email is available (initial setup)',
+      });
+      return;
+    }
+
     console.error('Email validation error:', error);
     res.status(500).json({
       error: 'Server Error',
       message: 'Failed to validate email',
+      details: error.message, // Include error details for better debugging
     });
   }
 });

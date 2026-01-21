@@ -92,9 +92,14 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
+import { runMigrations } from './database/runMigrations';
+
 // Connect to Redis and start server
 async function startServer() {
   try {
+    // Run database migrations on startup
+    await runMigrations();
+
     await redisClient.connect();
     console.log('Connected to Redis');
 
