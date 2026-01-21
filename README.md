@@ -11,7 +11,7 @@
 
 ### Core Features
 - 📅 **Unified Calendar** - Sync Google Calendar and iCloud in one place
-- 🛒 **WooCommerce Integration** - Track orders and fulfillment status
+- 🛒 **WooCommerce Workflow Board** - Advanced order management with drag-and-drop kanban
 - 👥 **User Management** - Invite family members with granular permissions
 - 🔐 **Permission System** - Role-based access control with custom overrides
 - 📱 **Mobile Optimized** - Responsive design with touch-friendly interface
@@ -23,6 +23,46 @@
 - 🌤️ **Weather Widget** - Real-time weather information
 - 📸 **Photo Gallery** - *(In Development)* Shared family photo albums
 - 🎯 **Setup Wizard** - Easy first-time configuration via GUI
+
+### 🛒 WooCommerce Workflow Board
+
+Advanced order management system with production-ready features:
+
+#### Visual Workflow Management
+- **Drag-and-Drop Kanban** - Move orders between workflow stages with smooth animations
+- **Custom Stage Support** - Automatically syncs with WooCommerce Order Status Manager plugin
+- **Bi-Directional Sync** - Changes in Lumina update WooCommerce, and vice versa
+- **Priority Labels** - Mark orders as High (⚡) or Rush (🔥) for visibility
+- **Time Tracking** - See how long orders have been in each stage
+
+#### Product Customization Display
+- **At-a-Glance Details** - View product specifications directly on order cards
+- **Smart Extraction** - Automatically extracts customization from WooCommerce meta fields
+- **Production Instructions** - See board style, font, colors, and name count without clicking
+- **Example Display**: "Large Board • Ballerina • Strawberry Milkshake • 2 Names"
+
+#### Advanced Filtering
+- **Filter by Customization** - Find orders by board style, font, or color instantly
+- **Date Range Filters** - Quick presets (7/30 days) or custom date ranges
+- **Active Filter Summary** - See all active filters with one-click removal
+- **Fast SQL Queries** - Indexed JSON queries for sub-second filtering on 200+ orders
+
+#### Column Visibility
+- **Hide/Show Stages** - Eye icon (👁️) on each column to toggle visibility
+- **Focus Mode** - Hide completed/cancelled orders to focus on active work
+- **Persistent Settings** - Column visibility saved per-user in database
+
+#### Order Tracking
+- **Australia Post Integration** - Add tracking numbers directly in Lumina
+- **Automatic Emails** - WooCommerce sends completion email with tracking info
+- **Track Links** - One-click links to Australia Post tracking page
+- **Order History** - Full audit trail of all stage changes and updates
+
+#### Bulk Operations
+- **Multi-Select** - Select multiple orders with checkboxes
+- **Bulk Stage Move** - Move multiple orders to new stage at once
+- **Bulk Priority** - Set priority for multiple orders simultaneously
+- **Bulk Assignment** - Assign multiple orders to team members
 
 ## 🚀 Quick Start
 
@@ -136,7 +176,13 @@ Lumina is fully optimized for mobile devices:
 - Setup Wizard
 - User Management with Permissions
 - Calendar Sync (Google Calendar)
-- WooCommerce Integration
+- WooCommerce Workflow Board with Advanced Features
+  - Product customization display on order cards
+  - Advanced filtering by customization fields
+  - Column visibility toggles
+  - Australia Post tracking integration
+  - Bi-directional sync with WooCommerce
+  - Drag-and-drop kanban interface
 - Calendar Sharing
 - User Profiles
 - Weather Widget
