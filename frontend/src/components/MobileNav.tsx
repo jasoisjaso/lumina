@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-type View = 'dashboard' | 'calendar' | 'photos' | 'weather';
+type View = 'dashboard' | 'calendar' | 'photos' | 'weather' | 'workflow';
 
 interface MobileNavProps {
   currentView: View;
