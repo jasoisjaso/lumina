@@ -131,7 +131,7 @@ class WooCommerceService {
   /**
    * Sync orders for a specific family
    */
-  async syncOrdersForFamily(familyId: number, daysBack: number = 30): Promise<SyncResult> {
+  async syncOrdersForFamily(familyId: number, daysBack: number = 365): Promise<SyncResult> {
     const result: SyncResult = {
       success: true,
       ordersProcessed: 0,
@@ -151,13 +151,40 @@ class WooCommerceService {
       const afterDate = new Date();
       afterDate.setDate(afterDate.getDate() - daysBack);
 
-      // Fetch orders with status=any to get ALL statuses including custom ones from Order Status Manager plugin
-      const response = await familyApi.get('orders', {
-        after: afterDate.toISOString(),
-        per_page: 100,
-        status: 'any', // This will include custom statuses from plugins
-      });
-      const orders = response.data as WooCommerceOrder[];
+      // Fetch ALL orders with pagination to get more than 100 orders
+      let allOrders: WooCommerceOrder[] = [];
+      let page = 1;
+      let hasMorePages = true;
+
+      console.log(`Fetching all orders for family ${familyId} (starting ${daysBack} days back)...`);
+
+      while (hasMorePages) {
+        // Fetch orders with status=any to get ALL statuses including custom ones from Order Status Manager plugin
+        const response = await familyApi.get('orders', {
+          after: afterDate.toISOString(),
+          per_page: 100,
+          page: page,
+          status: 'any', // This will include custom statuses from plugins
+        });
+
+        const pageOrders = response.data as WooCommerceOrder[];
+
+        if (pageOrders.length === 0) {
+          hasMorePages = false;
+        } else {
+          allOrders = allOrders.concat(pageOrders);
+          console.log(`Fetched page ${page}: ${pageOrders.length} orders (total so far: ${allOrders.length})`);
+
+          // Check if there are more pages
+          if (pageOrders.length < 100) {
+            hasMorePages = false;
+          } else {
+            page++;
+          }
+        }
+      }
+
+      const orders = allOrders;
 
       console.log(`Fetched ${orders.length} orders from WooCommerce for family ${familyId}`);
 

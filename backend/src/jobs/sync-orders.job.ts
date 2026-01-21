@@ -158,7 +158,7 @@ export class SyncOrdersJob {
 // Export a singleton instance
 export const syncOrdersJob = new SyncOrdersJob(
   parseInt(process.env.SYNC_INTERVAL || '30'), // Default: 30 minutes
-  parseInt(process.env.SYNC_DAYS_BACK || '30') // Default: 30 days
+  parseInt(process.env.SYNC_DAYS_BACK || '730') // Default: 730 days (2 years) to get all orders
 );
 
 export default syncOrdersJob;

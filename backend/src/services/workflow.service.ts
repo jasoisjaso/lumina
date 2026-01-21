@@ -80,17 +80,24 @@ class WorkflowService {
       .leftJoin('users as u', 'ow.assigned_to', 'u.id')
       .where('ows.family_id', familyId)
       .select(
-        'ow.id',
+        'ow.id as workflow_id',
         'ow.order_id',
         'ow.stage_id',
         'ow.assigned_to',
         'ow.priority',
         'ow.notes',
         'ow.last_updated',
-        'ow.created_at',
-        'ow.updated_at',
-        knex.raw('json_object("id", u.id, "first_name", u.first_name, "last_name", u.last_name, "color", u.color) as assignee'),
-        knex.raw('json_object("id", ows.id, "name", ows.name, "color", ows.color, "position", ows.position, "wc_status", ows.wc_status) as stage'),
+        'ow.created_at as workflow_created_at',
+        'ow.updated_at as workflow_updated_at',
+        'u.id as user_id',
+        'u.first_name',
+        'u.last_name',
+        'u.color as user_color',
+        'ows.id as stage_id_full',
+        'ows.name as stage_name',
+        'ows.color as stage_color',
+        'ows.position as stage_position',
+        'ows.wc_status',
         knex.raw('ROUND((julianday("now") - julianday(ow.last_updated)) * 1440) as time_in_stage')
       );
 
@@ -103,11 +110,38 @@ class WorkflowService {
     // Map cached order data to workflow orders
     const ordersWithData = orders.map((order: any) => {
       const orderData = cachedOrders.find((co: any) => co.id === order.order_id);
+
+      // Construct assignee object from flat columns
+      const assignee = order.user_id ? {
+        id: order.user_id,
+        first_name: order.first_name,
+        last_name: order.last_name,
+        color: order.user_color
+      } : null;
+
+      // Construct stage object from flat columns (cast as any for compatibility)
+      const stage: any = {
+        id: order.stage_id_full,
+        name: order.stage_name,
+        color: order.stage_color,
+        position: order.stage_position,
+        wc_status: order.wc_status
+      };
+
       return {
-        ...order,
+        id: order.workflow_id,
+        order_id: order.order_id,
+        stage_id: order.stage_id,
+        assigned_to: order.assigned_to,
+        priority: order.priority,
+        notes: order.notes,
+        last_updated: order.last_updated,
+        created_at: order.workflow_created_at,
+        updated_at: order.workflow_updated_at,
         order_data: orderData || null,
-        assignee: order.assignee ? JSON.parse(order.assignee) : null,
-        stage: JSON.parse(order.stage),
+        assignee,
+        stage,
+        time_in_stage: order.time_in_stage
       };
     });
 
