@@ -1,5 +1,8 @@
 FROM node:18-alpine AS build
 
+# Install build tools required for native modules
+RUN apk add --no-cache python3 make g++ python3-dev py3-pip
+
 WORKDIR /app
 
 # Copy package files

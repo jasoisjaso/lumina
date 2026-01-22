@@ -256,10 +256,17 @@ class WooCommerceService {
 
     // Extract customization details from line items
     let customizationDetails = null;
+    const debugMode = process.env.DEBUG_CUSTOMIZATION === 'true';
+    
     try {
-      const extracted = extractCustomizationDetails(order.line_items);
+      const extracted = extractCustomizationDetails(order.line_items, debugMode);
       if (extracted) {
         customizationDetails = JSON.stringify(extracted);
+        if (debugMode) {
+          console.log(`[Order #${order.id}] Extracted customization:`, extracted);
+        }
+      } else if (debugMode) {
+        console.log(`[Order #${order.id}] No customization extracted`);
       }
     } catch (error: any) {
       console.warn(`Failed to extract customization for order ${order.id}:`, error.message);

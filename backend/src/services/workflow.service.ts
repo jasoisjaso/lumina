@@ -536,73 +536,159 @@ class WorkflowService {
       date_to?: string;
     }
   ): Promise<{ stages: WorkflowStage[]; orders: WorkflowOrder[] }> {
+    // Debug: Log filter parameters
+    console.log('[Workflow] Filter request:', {
+      familyId,
+      filters: Object.keys(filters).length > 0 ? filters : 'none',
+    });
+
     // Get ALL stages including hidden ones - frontend will manage visibility display
     const stages = await knex('order_workflow_stages')
       .where({ family_id: familyId })
       .orderBy('position', 'asc');
 
+    // First, let's check total orders before filtering
+    const totalOrdersBeforeFilter = await knex('order_workflow as ow')
+      .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
+      .join('cached_orders as co', 'ow.order_id', 'co.id')
+      .where('ows.family_id', familyId)
+      .count('* as count')
+      .first();
+
+    console.log('[Workflow] Total orders before filters:', totalOrdersBeforeFilter?.count);
+
     // Start building order query - get ALL orders including those in hidden stages
     // Frontend will filter display based on stage visibility
-    const orders = await knex('order_workflow as ow')
+    let queryBuilder = knex('order_workflow as ow')
       .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
       .leftJoin('users as u', 'ow.assigned_to', 'u.id')
       .join('cached_orders as co', 'ow.order_id', 'co.id')
-      .where('ows.family_id', familyId)
-      .select(
-        'ow.id as workflow_id',
-        'ow.order_id',
-        'ow.stage_id',
-        'ow.assigned_to',
-        'ow.priority',
-        'ow.notes',
-        'ow.last_updated',
-        'ow.created_at as workflow_created_at',
-        'ow.updated_at as workflow_updated_at',
-        'u.id as user_id',
-        'u.first_name',
-        'u.last_name',
-        'u.color as user_color',
-        'ows.id as stage_id_full',
-        'ows.name as stage_name',
-        'ows.color as stage_color',
-        'ows.position as stage_position',
-        'ows.wc_status',
-        'ows.is_hidden as stage_is_hidden',
-        'co.customization_details',
-        knex.raw('ROUND((julianday("now") - julianday(ow.last_updated)) * 1440) as time_in_stage')
-      )
-      .modify((queryBuilder) => {
-        // Apply customization filters using JSON extraction
-        if (filters.board_style) {
-          queryBuilder.whereRaw(
-            "json_extract(co.customization_details, '$.board_style') = ?",
-            [filters.board_style]
-          );
-        }
+      .where('ows.family_id', familyId);
 
-        if (filters.font) {
-          queryBuilder.whereRaw(
-            "json_extract(co.customization_details, '$.font') = ?",
-            [filters.font]
-          );
-        }
+    // Apply customization filters using JSON extraction
+    if (filters.board_style) {
+      console.log('[Workflow] Applying board_style filter:', filters.board_style);
+      queryBuilder = queryBuilder.whereRaw(
+        "json_extract(co.customization_details, '$.board_style') = ?",
+        [filters.board_style]
+      );
 
-        if (filters.board_color) {
-          queryBuilder.whereRaw(
-            "json_extract(co.customization_details, '$.board_color') = ?",
-            [filters.board_color]
-          );
-        }
+      // Debug: Check how many orders match this filter
+      const matchCount = await knex('order_workflow as ow')
+        .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
+        .join('cached_orders as co', 'ow.order_id', 'co.id')
+        .where('ows.family_id', familyId)
+        .whereRaw("json_extract(co.customization_details, '$.board_style') = ?", [filters.board_style])
+        .count('* as count')
+        .first();
+      console.log('[Workflow] Orders matching board_style filter:', matchCount?.count);
+    }
 
-        // Apply date range filters
-        if (filters.date_from) {
-          queryBuilder.where('co.date_created', '>=', filters.date_from);
-        }
+    if (filters.font) {
+      console.log('[Workflow] Applying font filter:', filters.font);
+      queryBuilder = queryBuilder.whereRaw(
+        "json_extract(co.customization_details, '$.font') = ?",
+        [filters.font]
+      );
+    }
 
-        if (filters.date_to) {
-          queryBuilder.where('co.date_created', '<=', filters.date_to);
-        }
+    if (filters.board_color) {
+      console.log('[Workflow] Applying board_color filter:', filters.board_color);
+      queryBuilder = queryBuilder.whereRaw(
+        "json_extract(co.customization_details, '$.board_color') = ?",
+        [filters.board_color]
+      );
+    }
+
+    // Apply date range filters
+    // CRITICAL FIX: Database stores dates as UNIX timestamps (milliseconds since epoch)
+    // NOT as ISO strings! Must convert to timestamps for comparison.
+    if (filters.date_from) {
+      // Parse as UTC midnight (YYYY-MM-DD becomes YYYY-MM-DDT00:00:00.000Z)
+      const dateFrom = new Date(filters.date_from + 'T00:00:00.000Z');
+      const dateFromTimestamp = dateFrom.getTime(); // Convert to milliseconds timestamp
+      console.log('[Workflow] Applying date_from filter:', {
+        received: filters.date_from,
+        parsedISO: dateFrom.toISOString(),
+        timestamp: dateFromTimestamp,
+        localDisplay: dateFrom.toLocaleString()
       });
+
+      queryBuilder = queryBuilder.where('co.date_created', '>=', dateFromTimestamp);
+
+      // Debug: Check how many orders match date filter
+      const dateMatchCount = await knex('cached_orders as co')
+        .where('family_id', familyId)
+        .where('date_created', '>=', dateFromTimestamp)
+        .count('* as count')
+        .first();
+      console.log('[Workflow] Orders with date_created >=', dateFromTimestamp, ':', dateMatchCount?.count);
+
+      // Also check the date range in database
+      const dateStats = await knex('cached_orders')
+        .where('family_id', familyId)
+        .select(
+          knex.raw('MIN(date_created) as earliest'),
+          knex.raw('MAX(date_created) as latest')
+        )
+        .first();
+
+      // Convert timestamps to readable dates for debugging
+      const earliestDate = dateStats?.earliest ? new Date(dateStats.earliest).toISOString() : 'none';
+      const latestDate = dateStats?.latest ? new Date(dateStats.latest).toISOString() : 'none';
+
+      console.log('[Workflow] Database date range:', {
+        earliestTimestamp: dateStats?.earliest,
+        earliestDate: earliestDate,
+        latestTimestamp: dateStats?.latest,
+        latestDate: latestDate
+      });
+    }
+
+    if (filters.date_to) {
+      // Parse as UTC end of day (YYYY-MM-DD becomes YYYY-MM-DDT23:59:59.999Z)
+      const dateTo = new Date(filters.date_to + 'T23:59:59.999Z');
+      const dateToTimestamp = dateTo.getTime(); // Convert to milliseconds timestamp
+      console.log('[Workflow] Applying date_to filter:', {
+        received: filters.date_to,
+        parsedISO: dateTo.toISOString(),
+        timestamp: dateToTimestamp,
+        localDisplay: dateTo.toLocaleString()
+      });
+      queryBuilder = queryBuilder.where('co.date_created', '<=', dateToTimestamp);
+    }
+
+    // Execute the query with all filters
+    const orders = await queryBuilder.select(
+      'ow.id as workflow_id',
+      'ow.order_id',
+      'ow.stage_id',
+      'ow.assigned_to',
+      'ow.priority',
+      'ow.notes',
+      'ow.last_updated',
+      'ow.created_at as workflow_created_at',
+      'ow.updated_at as workflow_updated_at',
+      'u.id as user_id',
+      'u.first_name',
+      'u.last_name',
+      'u.color as user_color',
+      'ows.id as stage_id_full',
+      'ows.name as stage_name',
+      'ows.color as stage_color',
+      'ows.position as stage_position',
+      'ows.wc_status',
+      'ows.is_hidden as stage_is_hidden',
+      'co.customization_details',
+      'co.date_created',
+      knex.raw('ROUND((julianday("now") - julianday(ow.last_updated)) * 1440) as time_in_stage')
+    );
+
+    console.log('[Workflow] Filter results:', {
+      totalOrdersAfterFilters: orders.length,
+      sampleOrderId: orders[0]?.order_id || 'none',
+      sampleDate: orders[0]?.date_created || 'none',
+    });
 
     // Get order data from cache
     const orderIds = orders.map((o: any) => o.order_id);

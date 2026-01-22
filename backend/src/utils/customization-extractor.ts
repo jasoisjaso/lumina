@@ -35,26 +35,132 @@ interface WooCommerceLineItem {
 /**
  * Field name mappings for extracting customization details
  * Keys are our normalized field names, values are possible WooCommerce meta field names
+ * Enhanced with comprehensive pattern matching for various customer field configurations
  */
 const FIELD_MAPPINGS = {
-  board_style: ['board-style', 'Board Style', 'style', 'Board-Style'],
-  font: ['Font', 'font', 'Font Style', 'font-style'],
-  board_color: ['Back Base Colour of Board', 'Board Colour', 'Base Colour', 'board-colour', 'board-color'],
-  name_colors: ['Colours for Each Name', 'Name Colours', 'name-colours', 'name-colors'],
-  number_of_names: ['name', 'Names', 'Names max (4)', 'Number of Names'],
-  names_text: ['Names max (4) price applies as above', 'Names', 'names', 'Customer Names'],
-  theme: ['Adding a theme? Let us know here & view images to select colour', 'Theme', 'theme', 'Adding a theme?'],
-  size: ['size', 'Size', 'Height', 'height'],
+  board_style: [
+    'board-style', 
+    'Board Style', 
+    'style', 
+    'Board-Style',
+    'boardstyle',
+    'board_style',
+    'board type',
+    'board-type',
+    'boardtype',
+    '_board_style',
+    'Board Type'
+  ],
+  font: [
+    'Font', 
+    'font', 
+    'Font Style', 
+    'font-style',
+    'fonttype',
+    'font_choice',
+    'font choice',
+    'Font Type',
+    'Font Choice',
+    '_font',
+    'font_type'
+  ],
+  board_color: [
+    'Back Base Colour of Board', 
+    'Board Colour', 
+    'Base Colour', 
+    'board-colour', 
+    'board-color',
+    'board_color',
+    'boardcolor',
+    'Color Choice',
+    'color',
+    'colour',
+    '_board_color',
+    'Board Color',
+    'Color',
+    'Colour',
+    '_color'
+  ],
+  name_colors: [
+    'Colours for Each Name', 
+    'Name Colours', 
+    'name-colours', 
+    'name-colors',
+    'name_colors',
+    'namecolors',
+    'Name Colors',
+    'Colors for Names'
+  ],
+  number_of_names: [
+    'name', 
+    'Names', 
+    'Names max (4)', 
+    'Number of Names',
+    'number_of_names',
+    'numberofnames',
+    '_number_of_names',
+    'name_count',
+    'Name Count',
+    'name quantity',
+    'namequantity'
+  ],
+  names_text: [
+    'Names max (4) price applies as above', 
+    'Names', 
+    'names', 
+    'Customer Names',
+    'customer_names',
+    'customernames',
+    'Name List',
+    'names_list',
+    'actual names'
+  ],
+  theme: [
+    'Adding a theme? Let us know here & view images to select colour', 
+    'Theme', 
+    'theme', 
+    'Adding a theme?',
+    'theme_selection',
+    'themeselection',
+    '_theme_selection',
+    'Add Theme',
+    'theme_option',
+    'theme option'
+  ],
+  size: [
+    'size', 
+    'Size', 
+    'Height', 
+    'height',
+    'Board Size',
+    'board_size',
+    'boardsize',
+    'dimensions',
+    'Dimensions'
+  ],
 };
 
 /**
  * Find a meta field value by checking multiple possible field names (case-insensitive)
+ * Enhanced with fuzzy matching to catch variations like underscores, hyphens, spaces
  */
 function findMetaValue(metaData: WooCommerceMetaData[], possibleKeys: string[]): any | null {
+  // Normalize a string for comparison (remove spaces, hyphens, underscores, make lowercase)
+  const normalize = (str: string) => str.toLowerCase().replace(/[_\-\s]/g, '');
+
   for (const metaItem of metaData) {
+    const normalizedMetaKey = normalize(metaItem.key);
+
     for (const key of possibleKeys) {
-      // Case-insensitive comparison
-      if (metaItem.key.toLowerCase().trim() === key.toLowerCase().trim()) {
+      const normalizedKey = normalize(key);
+
+      // Exact normalized match
+      if (normalizedMetaKey === normalizedKey) {
+        return metaItem.value;
+      }
+
+      // Partial match - check if meta key contains the pattern
+      if (normalizedMetaKey.includes(normalizedKey) || normalizedKey.includes(normalizedMetaKey)) {
         return metaItem.value;
       }
     }
@@ -94,7 +200,7 @@ function parseNames(value: string): string[] | null {
  * Extract customization details from WooCommerce line items
  * Returns null if no customization fields are found
  */
-export function extractCustomizationDetails(lineItems: WooCommerceLineItem[]): CustomizationDetails | null {
+export function extractCustomizationDetails(lineItems: WooCommerceLineItem[], debug = false): CustomizationDetails | null {
   if (!lineItems || lineItems.length === 0) {
     return null;
   }
@@ -108,6 +214,12 @@ export function extractCustomizationDetails(lineItems: WooCommerceLineItem[]): C
   }
 
   const metaData = firstItem.meta_data;
+  
+  // Debug: Log all meta field keys
+  if (debug) {
+    console.log('Available meta field keys:', metaData.map(m => m.key).join(', '));
+  }
+  
   const details: CustomizationDetails = {
     raw_meta: metaData, // Keep raw meta for debugging and future flexibility
   };
@@ -116,24 +228,28 @@ export function extractCustomizationDetails(lineItems: WooCommerceLineItem[]): C
   const boardStyle = findMetaValue(metaData, FIELD_MAPPINGS.board_style);
   if (boardStyle) {
     details.board_style = String(boardStyle);
+    if (debug) console.log('✓ Extracted board_style:', boardStyle);
   }
 
   // Extract font
   const font = findMetaValue(metaData, FIELD_MAPPINGS.font);
   if (font) {
     details.font = String(font);
+    if (debug) console.log('✓ Extracted font:', font);
   }
 
   // Extract board color
   const boardColor = findMetaValue(metaData, FIELD_MAPPINGS.board_color);
   if (boardColor) {
     details.board_color = String(boardColor);
+    if (debug) console.log('✓ Extracted board_color:', boardColor);
   }
 
   // Extract name colors
   const nameColors = findMetaValue(metaData, FIELD_MAPPINGS.name_colors);
   if (nameColors) {
     details.name_colors = String(nameColors);
+    if (debug) console.log('✓ Extracted name_colors:', nameColors);
   }
 
   // Extract number of names
@@ -142,6 +258,7 @@ export function extractCustomizationDetails(lineItems: WooCommerceLineItem[]): C
     const parsed = parseNumberOfNames(String(numNamesValue));
     if (parsed !== null) {
       details.number_of_names = parsed;
+      if (debug) console.log('✓ Extracted number_of_names:', parsed);
     }
   }
 
@@ -149,6 +266,7 @@ export function extractCustomizationDetails(lineItems: WooCommerceLineItem[]): C
   const namesText = findMetaValue(metaData, FIELD_MAPPINGS.names_text);
   if (namesText) {
     details.names_text = String(namesText);
+    if (debug) console.log('✓ Extracted names_text:', namesText);
 
     // Also parse into array
     const parsedNames = parseNames(String(namesText));
@@ -161,12 +279,14 @@ export function extractCustomizationDetails(lineItems: WooCommerceLineItem[]): C
   const theme = findMetaValue(metaData, FIELD_MAPPINGS.theme);
   if (theme) {
     details.theme = String(theme);
+    if (debug) console.log('✓ Extracted theme:', theme);
   }
 
   // Extract size
   const size = findMetaValue(metaData, FIELD_MAPPINGS.size);
   if (size) {
     details.size = String(size);
+    if (debug) console.log('✓ Extracted size:', size);
   }
 
   // Return null if no meaningful customization fields found
@@ -182,6 +302,7 @@ export function extractCustomizationDetails(lineItems: WooCommerceLineItem[]): C
     details.size;
 
   if (!hasCustomization) {
+    if (debug) console.log('⚠ No customization fields extracted');
     return null;
   }
 
