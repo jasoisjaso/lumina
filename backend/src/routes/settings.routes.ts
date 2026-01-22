@@ -1,6 +1,10 @@
 import express, { Request, Response } from 'express';
 import { settingsService, SettingsType } from '../services/settings.service';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.middleware';
+import os from 'os';
+import fs from 'fs';
+import path from 'path';
+import knex from '../database/knex';
 
 const router = express.Router();
 
@@ -214,5 +218,117 @@ router.post(
     }
   }
 );
+
+/**
+ * GET /api/v1/settings/admin/server-stats
+ * Get server statistics (admin only)
+ */
+router.get('/admin/server-stats', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    // Get database size
+    const getDbSize = (): string => {
+      try {
+        const dbPath = process.env.DATABASE_PATH || '/app/data/lumina.db';
+        const stats = fs.statSync(dbPath);
+        return (stats.size / 1024 / 1024).toFixed(2) + ' MB';
+      } catch {
+        return 'Unknown';
+      }
+    };
+
+    // Get order count
+    const orderCount = await knex('cached_orders').count('* as count').first();
+
+    // Format uptime
+    const uptimeSeconds = process.uptime();
+    const days = Math.floor(uptimeSeconds / 86400);
+    const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+    const uptimeFormatted = `${days}d ${hours}h ${minutes}m`;
+
+    const stats = {
+      uptime: {
+        seconds: Math.floor(uptimeSeconds),
+        formatted: uptimeFormatted,
+      },
+      memory: {
+        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024), // MB
+        total: Math.round(os.totalmem() / 1024 / 1024), // MB
+        percentage: Math.round((process.memoryUsage().heapUsed / os.totalmem()) * 100),
+      },
+      database: {
+        size: getDbSize(),
+        orders: orderCount?.count || 0,
+      },
+      system: {
+        platform: os.platform(),
+        nodeVersion: process.version,
+        cpus: os.cpus().length,
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    res.json(stats);
+  } catch (error: any) {
+    console.error('Get server stats error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message || 'Failed to retrieve server stats',
+    });
+  }
+});
+
+/**
+ * GET /api/v1/settings/admin/error-logs
+ * Get recent error logs (admin only)
+ */
+router.get('/admin/error-logs', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const logPath = process.env.LOG_PATH || '/app/data/backend.log';
+
+    try {
+      // Check if log file exists
+      if (!fs.existsSync(logPath)) {
+        res.json({
+          logs: [],
+          count: 0,
+          message: 'No log file found yet',
+          lastUpdated: new Date().toISOString(),
+        });
+        return;
+      }
+
+      // Read log file
+      const logContent = fs.readFileSync(logPath, 'utf8');
+      const allLines = logContent.split('\n').filter(line => line.trim());
+
+      // Get last 200 lines and filter for errors/warnings
+      const recentLines = allLines.slice(-200);
+      const errorLines = recentLines.filter(line =>
+        line.includes('ERROR') || line.includes('WARN') || line.includes('error:')
+      );
+
+      res.json({
+        logs: errorLines.reverse(), // Most recent first
+        count: errorLines.length,
+        totalLines: recentLines.length,
+        lastUpdated: new Date().toISOString(),
+      });
+    } catch (fileError: any) {
+      res.json({
+        logs: [],
+        count: 0,
+        error: fileError.message,
+        lastUpdated: new Date().toISOString(),
+      });
+    }
+  } catch (error: any) {
+    console.error('Get error logs error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message || 'Failed to retrieve error logs',
+    });
+  }
+});
 
 export default router;

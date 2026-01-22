@@ -134,6 +134,22 @@ export const settingsAPI = {
     });
     return response.data;
   },
+
+  /**
+   * Get server statistics (admin only)
+   */
+  async getServerStats(): Promise<any> {
+    const response = await apiClient.get('/settings/admin/server-stats');
+    return response.data;
+  },
+
+  /**
+   * Get error logs (admin only)
+   */
+  async getErrorLogs(): Promise<any> {
+    const response = await apiClient.get('/settings/admin/error-logs');
+    return response.data;
+  },
 };
 
 export default settingsAPI;

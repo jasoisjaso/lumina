@@ -20,9 +20,54 @@ import workflowRoutes from './routes/workflow.routes';
 import debugRoutes from './routes/debug.routes';
 import { syncOrdersJob } from './jobs/sync-orders.job';
 import { syncCalendarsJob } from './jobs/sync-calendars.job';
+import fs from 'fs';
+import path from 'path';
 
 const app = express();
 const port = config.port;
+
+// Setup error logging to file
+const logPath = process.env.LOG_PATH || '/app/data/backend.log';
+const logDir = path.dirname(logPath);
+
+// Ensure log directory exists
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir, { recursive: true });
+}
+
+// Override console.error to log to file
+const originalConsoleError = console.error;
+console.error = (...args: any[]) => {
+  const timestamp = new Date().toISOString();
+  const message = `[ERROR] ${timestamp} - ${args.map(arg =>
+    typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+  ).join(' ')}\n`;
+
+  try {
+    fs.appendFileSync(logPath, message);
+  } catch (err) {
+    originalConsoleError('Failed to write to log file:', err);
+  }
+
+  originalConsoleError(...args);
+};
+
+// Also capture warnings
+const originalConsoleWarn = console.warn;
+console.warn = (...args: any[]) => {
+  const timestamp = new Date().toISOString();
+  const message = `[WARN] ${timestamp} - ${args.map(arg =>
+    typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+  ).join(' ')}\n`;
+
+  try {
+    fs.appendFileSync(logPath, message);
+  } catch (err) {
+    originalConsoleError('Failed to write to log file:', err);
+  }
+
+  originalConsoleWarn(...args);
+};
 
 // Middleware
 app.use(cors());

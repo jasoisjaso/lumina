@@ -5,13 +5,15 @@ import { weatherAPI } from '../api/weather.api';
 import { icloudCalendarAPI } from '../api/icloud-calendar.api';
 import { ordersAPI } from '../api/orders.api';
 import UserManagement from './UserManagement';
+import ServerStats from './admin/ServerStats';
+import ErrorLogViewer from './admin/ErrorLogViewer';
 
 interface SettingsPanelProps {
   onClose: () => void;
   onError?: (error: string) => void;
 }
 
-type TabType = 'integrations' | 'features' | 'calendar' | 'members';
+type TabType = 'integrations' | 'features' | 'calendar' | 'members' | 'admin';
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, onError }) => {
   const [activeTab, setActiveTab] = useState<TabType>('integrations');
@@ -267,6 +269,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, onError }) => {
     { id: 'features' as TabType, label: 'Features', icon: '✨' },
     { id: 'calendar' as TabType, label: 'Calendar', icon: '📅' },
     { id: 'members' as TabType, label: 'Family Members', icon: '👥' },
+    { id: 'admin' as TabType, label: 'Admin', icon: '⚙️' },
   ];
 
   return (
@@ -1400,6 +1403,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, onError }) => {
           {activeTab === 'members' && (
             <UserManagement onError={onError} />
           )}
+
+          {/* Admin Tab */}
+          {activeTab === 'admin' && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-200">
+                <div className="flex items-center space-x-3 mb-2">
+                  <span className="text-2xl">⚙️</span>
+                  <h3 className="text-xl font-semibold text-gray-900">Admin Dashboard</h3>
+                </div>
+                <p className="text-sm text-gray-600">
+                  Monitor server health and system logs. Admin access required.
+                </p>
+              </div>
+
+              {/* Server Stats */}
+              <ServerStats />
+
+              {/* Error Logs */}
+              <ErrorLogViewer />
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -1409,9 +1433,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, onError }) => {
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
             >
-              {activeTab === 'members' ? 'Close' : 'Cancel'}
+              {activeTab === 'members' || activeTab === 'admin' ? 'Close' : 'Cancel'}
             </button>
-            {activeTab !== 'members' && (
+            {activeTab !== 'members' && activeTab !== 'admin' && (
               <button
                 onClick={
                   activeTab === 'integrations'
