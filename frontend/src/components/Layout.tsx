@@ -5,6 +5,8 @@ import { authAPI } from '../api/auth.api';
 import SettingsPanel from './SettingsPanel';
 import WeatherWidget from './WeatherWidget';
 import MobileNav from './MobileNav';
+import { useFeatures } from '../hooks/useFeatures';
+import { FeatureStatus } from '../api/features.api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -21,6 +23,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, sidebar, onError, c
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const { features, loading: featuresLoading } = useFeatures();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -58,6 +61,49 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, sidebar, onError, c
     });
   };
 
+  /**
+   * Render status badge for a feature
+   */
+  const renderStatusBadge = (feature: FeatureStatus) => {
+    if (!feature.message || feature.message === 'Active' || feature.message === 'Ready') {
+      return null; // No badge for healthy features
+    }
+
+    let badgeClass = '';
+    let badgeText = feature.message;
+
+    switch (feature.message) {
+      case 'Broken':
+        badgeClass = 'bg-red-100 text-red-700 border-red-200';
+        break;
+      case 'Setup required':
+      case 'Connecting':
+        badgeClass = 'bg-yellow-100 text-yellow-700 border-yellow-200';
+        badgeText = 'Setup';
+        break;
+      case 'Empty':
+      case 'No orders yet':
+        badgeClass = 'bg-gray-100 text-gray-600 border-gray-200';
+        badgeText = 'Empty';
+        break;
+      case 'Disabled':
+        badgeClass = 'bg-gray-100 text-gray-500 border-gray-200';
+        break;
+      case 'Synced':
+        badgeClass = 'bg-green-100 text-green-700 border-green-200';
+        badgeText = '✓';
+        break;
+      default:
+        badgeClass = 'bg-blue-100 text-blue-700 border-blue-200';
+    }
+
+    return (
+      <span className={`ml-1.5 px-1.5 py-0.5 text-xs font-medium rounded border ${badgeClass}`}>
+        {badgeText}
+      </span>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 font-['Inter',system-ui,-apple-system,sans-serif]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {/* Skylight-style Top Bar */}
@@ -82,9 +128,10 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, sidebar, onError, c
             {/* Desktop Navigation */}
             {onViewChange && (
               <div className="hidden md:flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
+                {/* Calendar - Always visible (core feature) */}
                 <button
                   onClick={() => onViewChange('calendar')}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center ${
                     currentView === 'calendar'
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
@@ -95,35 +142,46 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, sidebar, onError, c
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   Calendar
+                  {features?.calendar && renderStatusBadge(features.calendar)}
                 </button>
-                <button
-                  onClick={() => onViewChange('photos')}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    currentView === 'photos'
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  style={{ minHeight: '40px' }}
-                >
-                  <svg className="w-4 h-4 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  Photos
-                </button>
-                <button
-                  onClick={() => onViewChange('workflow')}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    currentView === 'workflow'
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  style={{ minHeight: '40px' }}
-                >
-                  <svg className="w-4 h-4 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                  Workflow
-                </button>
+
+                {/* Photos - Show if enabled and configured */}
+                {!featuresLoading && features?.photos?.canShow && (
+                  <button
+                    onClick={() => onViewChange('photos')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center ${
+                      currentView === 'photos'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    style={{ minHeight: '40px' }}
+                  >
+                    <svg className="w-4 h-4 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Photos
+                    {renderStatusBadge(features.photos)}
+                  </button>
+                )}
+
+                {/* Workflow - Show only if WooCommerce configured */}
+                {!featuresLoading && features?.workflow?.canShow && (
+                  <button
+                    onClick={() => onViewChange('workflow')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center ${
+                      currentView === 'workflow'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    style={{ minHeight: '40px' }}
+                  >
+                    <svg className="w-4 h-4 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    Workflow
+                    {renderStatusBadge(features.workflow)}
+                  </button>
+                )}
               </div>
             )}
 

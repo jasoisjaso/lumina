@@ -1,5 +1,7 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth.middleware';
+import { authenticate, AuthRequest, requireAdmin, requirePermission } from '../middleware/auth.middleware';
+import { sanitizeInput } from '../middleware/sanitize.middleware';
+import { PermissionName } from '../types/permissions';
 import workflowService from '../services/workflow.service';
 import wooCommerceService from '../services/woocommerce.service';
 
@@ -10,7 +12,7 @@ const router = Router();
  * Get full workflow board with all stages and orders
  * Supports filtering via query params: board_style, font, board_color, date_from, date_to
  */
-router.get('/board', authenticate, async (req: AuthRequest, res: Response) => {
+router.get('/board', authenticate, sanitizeInput, async (req: AuthRequest, res: Response) => {
   try {
     const familyId = req.user!.familyId;
 
@@ -76,8 +78,9 @@ router.get('/filters/options', authenticate, async (req: AuthRequest, res: Respo
 /**
  * PUT /api/v1/workflow/stages/:id/visibility
  * Toggle stage visibility (show/hide columns)
+ * Requires admin role
  */
-router.put('/stages/:id/visibility', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/stages/:id/visibility', authenticate, requireAdmin, sanitizeInput, async (req: AuthRequest, res: Response) => {
   try {
     const stageId = parseInt(req.params.id);
     const { is_hidden } = req.body;
@@ -106,9 +109,9 @@ router.put('/stages/:id/visibility', authenticate, async (req: AuthRequest, res:
 /**
  * PUT /api/v1/workflow/stages
  * Update workflow stages configuration
- * Requires admin or manage_woocommerce permission
+ * Requires admin role (only admins can reconfigure workflow stages)
  */
-router.put('/stages', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/stages', authenticate, requireAdmin, sanitizeInput, async (req: AuthRequest, res: Response) => {
   try {
     const familyId = req.user!.familyId;
     const { stages } = req.body;
@@ -138,8 +141,9 @@ router.put('/stages', authenticate, async (req: AuthRequest, res: Response) => {
 /**
  * PUT /api/v1/workflow/orders/:id
  * Update order workflow (stage, priority, assignment)
+ * Requires manage_orders permission
  */
-router.put('/orders/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/orders/:id', authenticate, requirePermission(PermissionName.MANAGE_ORDERS), sanitizeInput, async (req: AuthRequest, res: Response) => {
   try {
     const orderId = parseInt(req.params.id);
     const userId = req.user!.userId;
@@ -187,8 +191,9 @@ router.put('/orders/:id', authenticate, async (req: AuthRequest, res: Response) 
 /**
  * POST /api/v1/workflow/bulk-update
  * Bulk update multiple orders
+ * Requires manage_orders permission
  */
-router.post('/bulk-update', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/bulk-update', authenticate, requirePermission(PermissionName.MANAGE_ORDERS), sanitizeInput, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
     const familyId = req.user!.familyId;
@@ -253,7 +258,7 @@ router.post('/bulk-update', authenticate, async (req: AuthRequest, res: Response
  * GET /api/v1/workflow/orders/:id/history
  * Get order workflow history
  */
-router.get('/orders/:id/history', authenticate, async (req: AuthRequest, res: Response) => {
+router.get('/orders/:id/history', authenticate, sanitizeInput, async (req: AuthRequest, res: Response) => {
   try {
     const orderId = parseInt(req.params.id);
     const history = await workflowService.getOrderHistory(orderId);
@@ -309,8 +314,9 @@ router.get('/overdue', authenticate, async (req: AuthRequest, res: Response) => 
 /**
  * PUT /api/v1/workflow/orders/:id/tracking
  * Update order tracking information (Australia Post)
+ * Requires manage_orders permission
  */
-router.put('/orders/:id/tracking', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/orders/:id/tracking', authenticate, requirePermission(PermissionName.MANAGE_ORDERS), sanitizeInput, async (req: AuthRequest, res: Response) => {
   try {
     const orderId = parseInt(req.params.id);
     const familyId = req.user!.familyId;

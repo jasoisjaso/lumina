@@ -170,7 +170,10 @@ class WeatherService {
       // Check cache first
       const cachedData = await this.getCachedWeather(familyId, config.location, 'current');
       if (cachedData && !this.isCacheExpired(cachedData)) {
-        return this.parseCurrentWeather(cachedData.weather_data, config.location);
+        const parsedData = typeof cachedData.weather_data === 'string'
+          ? JSON.parse(cachedData.weather_data)
+          : cachedData.weather_data;
+        return this.parseCurrentWeather(parsedData, config.location);
       }
 
       // Fetch from API
@@ -196,7 +199,10 @@ class WeatherService {
         const cachedData = await this.getCachedWeather(familyId, config.location, 'current');
         if (cachedData) {
           console.log('Returning expired cached data due to API failure');
-          return this.parseCurrentWeather(cachedData.weather_data, config.location);
+          const parsedData = typeof cachedData.weather_data === 'string'
+            ? JSON.parse(cachedData.weather_data)
+            : cachedData.weather_data;
+          return this.parseCurrentWeather(parsedData, config.location);
         }
       }
 
@@ -224,7 +230,10 @@ class WeatherService {
       // Check cache first
       const cachedData = await this.getCachedWeather(familyId, config.location, 'forecast');
       if (cachedData && !this.isCacheExpired(cachedData)) {
-        return this.parseForecast(cachedData.weather_data, config.location);
+        const parsedData = typeof cachedData.weather_data === 'string'
+          ? JSON.parse(cachedData.weather_data)
+          : cachedData.weather_data;
+        return this.parseForecast(parsedData, config.location);
       }
 
       // Fetch from API (24 data points = 3 days with 3-hour intervals)
@@ -251,7 +260,10 @@ class WeatherService {
         const cachedData = await this.getCachedWeather(familyId, config.location, 'forecast');
         if (cachedData) {
           console.log('Returning expired cached forecast data due to API failure');
-          return this.parseForecast(cachedData.weather_data, config.location);
+          const parsedData = typeof cachedData.weather_data === 'string'
+            ? JSON.parse(cachedData.weather_data)
+            : cachedData.weather_data;
+          return this.parseForecast(parsedData, config.location);
         }
       }
 

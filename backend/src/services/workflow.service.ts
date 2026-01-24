@@ -222,38 +222,40 @@ class WorkflowService {
 
   /**
    * Bulk update orders
+   * Optimized to use batch operations instead of individual queries
    */
   async bulkUpdate(request: BulkUpdateRequest, changedBy: number): Promise<void> {
     await knex.transaction(async (trx) => {
-      for (const orderId of request.order_ids) {
-        const updates: any = {};
-        
-        if (request.stage_id !== undefined) updates.stage_id = request.stage_id;
-        if (request.assigned_to !== undefined) updates.assigned_to = request.assigned_to;
-        if (request.priority !== undefined) updates.priority = request.priority;
+      // 1. Fetch all current states in one query
+      const currentStates = await trx('order_workflow')
+        .whereIn('order_id', request.order_ids)
+        .select('order_id', 'stage_id');
 
-        // Get current state
-        const current = await trx('order_workflow').where({ order_id: orderId }).first();
-        
-        if (!current) continue;
+      // 2. Build update object
+      const updates: any = { last_updated: knex.fn.now() };
+      if (request.stage_id !== undefined) updates.stage_id = request.stage_id;
+      if (request.assigned_to !== undefined) updates.assigned_to = request.assigned_to;
+      if (request.priority !== undefined) updates.priority = request.priority;
 
-        // Update workflow
-        await trx('order_workflow')
-          .where({ order_id: orderId })
-          .update({
-            ...updates,
-            last_updated: knex.fn.now(),
-          });
+      // 3. Bulk update all orders in one query
+      await trx('order_workflow')
+        .whereIn('order_id', request.order_ids)
+        .update(updates);
 
-        // Record history if stage changed
-        if (request.stage_id && request.stage_id !== current.stage_id) {
-          await trx('order_workflow_history').insert({
-            order_id: orderId,
-            from_stage_id: current.stage_id,
+      // 4. Batch insert history records for stage changes
+      if (request.stage_id !== undefined) {
+        const historyRecords = currentStates
+          .filter((state: any) => state.stage_id !== request.stage_id)
+          .map((state: any) => ({
+            order_id: state.order_id,
+            from_stage_id: state.stage_id,
             to_stage_id: request.stage_id,
             changed_by: changedBy,
             notes: 'Bulk update',
-          });
+          }));
+
+        if (historyRecords.length > 0) {
+          await trx('order_workflow_history').insert(historyRecords);
         }
       }
     });
@@ -279,44 +281,59 @@ class WorkflowService {
 
   /**
    * Get workflow statistics
+   * Optimized to use a single aggregation query instead of N+1 queries
    */
   async getStats(familyId: number): Promise<any> {
     const stages = await this.getStages(familyId);
 
-    const stats = await Promise.all(
-      stages.map(async (stage) => {
-        const count = await knex('order_workflow')
-          .where({ stage_id: stage.id })
-          .count('* as count')
-          .first();
+    // Single aggregation query to get counts for all stages at once
+    const stageCounts = await knex('order_workflow as ow')
+      .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
+      .where('ows.family_id', familyId)
+      .groupBy('ows.id', 'ows.name')
+      .select(
+        'ows.id as stage_id',
+        'ows.name as stage_name',
+        knex.raw('COUNT(*) as total_orders'),
+        knex.raw('SUM(CASE WHEN ow.priority = 2 THEN 1 ELSE 0 END) as rush_orders')
+      );
 
-        const rushCount = await knex('order_workflow')
-          .where({ stage_id: stage.id, priority: 2 })
-          .count('* as count')
-          .first();
-
-        return {
-          stage_id: stage.id,
-          stage_name: stage.name,
-          total_orders: count?.count || 0,
-          rush_orders: rushCount?.count || 0,
-        };
-      })
+    // Create a map for O(1) lookup
+    const countsMap = new Map(
+      stageCounts.map((row: any) => [
+        row.stage_id,
+        {
+          total_orders: Number(row.total_orders) || 0,
+          rush_orders: Number(row.rush_orders) || 0,
+        },
+      ])
     );
 
-    // Overall stats
-    const totalOrders = await knex('order_workflow as ow')
-      .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
-      .where('ows.family_id', familyId)
-      .count('* as count')
-      .first();
+    // Merge counts with stages
+    const stats = stages.map((stage) => {
+      const counts = countsMap.get(stage.id) || { total_orders: 0, rush_orders: 0 };
+      return {
+        stage_id: stage.id,
+        stage_name: stage.name,
+        total_orders: counts.total_orders,
+        rush_orders: counts.rush_orders,
+      };
+    });
 
-    const unassignedOrders = await knex('order_workflow as ow')
-      .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
-      .where('ows.family_id', familyId)
-      .whereNull('ow.assigned_to')
-      .count('* as count')
-      .first();
+    // Overall stats - can be calculated in parallel
+    const [totalOrders, unassignedOrders] = await Promise.all([
+      knex('order_workflow as ow')
+        .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
+        .where('ows.family_id', familyId)
+        .count('* as count')
+        .first(),
+      knex('order_workflow as ow')
+        .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
+        .where('ows.family_id', familyId)
+        .whereNull('ow.assigned_to')
+        .count('* as count')
+        .first(),
+    ]);
 
     return {
       stages: stats,
@@ -346,7 +363,6 @@ class WorkflowService {
     familyId: number,
     wcStatuses: Array<{ status: string; count: number }>
   ): Promise<void> {
-    console.log(`Syncing workflow stages for family ${familyId} from WooCommerce statuses:`, wcStatuses);
 
     // Define status colors and display names
     const statusConfig: Record<string, { name: string; color: string; position: number }> = {
@@ -382,17 +398,14 @@ class WorkflowService {
           name: config.name,
           color: config.color,
           position: config.position,
-          wc_status: status,
+          wc_status: status
         });
-
-        console.log(`Creating new workflow stage: ${config.name} (${status})`);
       }
     }
 
     // Insert new stages
     if (newStages.length > 0) {
       await knex('order_workflow_stages').insert(newStages);
-      console.log(`Created ${newStages.length} new workflow stages`);
     }
   }
 
@@ -426,15 +439,11 @@ class WorkflowService {
     // If this stage maps to a WooCommerce status, update WooCommerce
     if (newStage.wc_status && wooCommerceService) {
       try {
-        console.log(`Syncing order ${cachedOrder.wc_order_id} status to WooCommerce: ${newStage.wc_status}`);
-
         await wooCommerceService.updateOrderStatus(
           cachedOrder.family_id,
           cachedOrder.wc_order_id,
           newStage.wc_status
         );
-
-        console.log(`Successfully synced order ${cachedOrder.wc_order_id} to WooCommerce`);
       } catch (error) {
         console.error(`Failed to sync order status to WooCommerce:`, error);
         // Don't throw - we still want the local update to persist
@@ -506,8 +515,6 @@ class WorkflowService {
         changed_by: 1, // System user
         notes: 'Synced from WooCommerce',
       });
-
-      console.log(`Updated order ${orderId} workflow stage from WooCommerce: ${wcStatus}`);
     }
   }
 
@@ -536,26 +543,11 @@ class WorkflowService {
       date_to?: string;
     }
   ): Promise<{ stages: WorkflowStage[]; orders: WorkflowOrder[] }> {
-    // Debug: Log filter parameters
-    console.log('[Workflow] Filter request:', {
-      familyId,
-      filters: Object.keys(filters).length > 0 ? filters : 'none',
-    });
 
     // Get ALL stages including hidden ones - frontend will manage visibility display
     const stages = await knex('order_workflow_stages')
       .where({ family_id: familyId })
       .orderBy('position', 'asc');
-
-    // First, let's check total orders before filtering
-    const totalOrdersBeforeFilter = await knex('order_workflow as ow')
-      .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
-      .join('cached_orders as co', 'ow.order_id', 'co.id')
-      .where('ows.family_id', familyId)
-      .count('* as count')
-      .first();
-
-    console.log('[Workflow] Total orders before filters:', totalOrdersBeforeFilter?.count);
 
     // Start building order query - get ALL orders including those in hidden stages
     // Frontend will filter display based on stage visibility
@@ -567,25 +559,14 @@ class WorkflowService {
 
     // Apply customization filters using JSON extraction
     if (filters.board_style) {
-      console.log('[Workflow] Applying board_style filter:', filters.board_style);
       queryBuilder = queryBuilder.whereRaw(
         "json_extract(co.customization_details, '$.board_style') = ?",
         [filters.board_style]
       );
 
-      // Debug: Check how many orders match this filter
-      const matchCount = await knex('order_workflow as ow')
-        .join('order_workflow_stages as ows', 'ow.stage_id', 'ows.id')
-        .join('cached_orders as co', 'ow.order_id', 'co.id')
-        .where('ows.family_id', familyId)
-        .whereRaw("json_extract(co.customization_details, '$.board_style') = ?", [filters.board_style])
-        .count('* as count')
-        .first();
-      console.log('[Workflow] Orders matching board_style filter:', matchCount?.count);
     }
 
     if (filters.font) {
-      console.log('[Workflow] Applying font filter:', filters.font);
       queryBuilder = queryBuilder.whereRaw(
         "json_extract(co.customization_details, '$.font') = ?",
         [filters.font]
@@ -593,7 +574,6 @@ class WorkflowService {
     }
 
     if (filters.board_color) {
-      console.log('[Workflow] Applying board_color filter:', filters.board_color);
       queryBuilder = queryBuilder.whereRaw(
         "json_extract(co.customization_details, '$.board_color') = ?",
         [filters.board_color]
@@ -607,54 +587,16 @@ class WorkflowService {
       // Parse as UTC midnight (YYYY-MM-DD becomes YYYY-MM-DDT00:00:00.000Z)
       const dateFrom = new Date(filters.date_from + 'T00:00:00.000Z');
       const dateFromTimestamp = dateFrom.getTime(); // Convert to milliseconds timestamp
-      console.log('[Workflow] Applying date_from filter:', {
-        received: filters.date_from,
-        parsedISO: dateFrom.toISOString(),
-        timestamp: dateFromTimestamp,
-        localDisplay: dateFrom.toLocaleString()
-      });
 
       queryBuilder = queryBuilder.where('co.date_created', '>=', dateFromTimestamp);
 
-      // Debug: Check how many orders match date filter
-      const dateMatchCount = await knex('cached_orders as co')
-        .where('family_id', familyId)
-        .where('date_created', '>=', dateFromTimestamp)
-        .count('* as count')
-        .first();
-      console.log('[Workflow] Orders with date_created >=', dateFromTimestamp, ':', dateMatchCount?.count);
 
-      // Also check the date range in database
-      const dateStats = await knex('cached_orders')
-        .where('family_id', familyId)
-        .select(
-          knex.raw('MIN(date_created) as earliest'),
-          knex.raw('MAX(date_created) as latest')
-        )
-        .first();
-
-      // Convert timestamps to readable dates for debugging
-      const earliestDate = dateStats?.earliest ? new Date(dateStats.earliest).toISOString() : 'none';
-      const latestDate = dateStats?.latest ? new Date(dateStats.latest).toISOString() : 'none';
-
-      console.log('[Workflow] Database date range:', {
-        earliestTimestamp: dateStats?.earliest,
-        earliestDate: earliestDate,
-        latestTimestamp: dateStats?.latest,
-        latestDate: latestDate
-      });
     }
 
     if (filters.date_to) {
       // Parse as UTC end of day (YYYY-MM-DD becomes YYYY-MM-DDT23:59:59.999Z)
       const dateTo = new Date(filters.date_to + 'T23:59:59.999Z');
       const dateToTimestamp = dateTo.getTime(); // Convert to milliseconds timestamp
-      console.log('[Workflow] Applying date_to filter:', {
-        received: filters.date_to,
-        parsedISO: dateTo.toISOString(),
-        timestamp: dateToTimestamp,
-        localDisplay: dateTo.toLocaleString()
-      });
       queryBuilder = queryBuilder.where('co.date_created', '<=', dateToTimestamp);
     }
 
@@ -678,17 +620,8 @@ class WorkflowService {
       'ows.color as stage_color',
       'ows.position as stage_position',
       'ows.wc_status',
-      'ows.is_hidden as stage_is_hidden',
-      'co.customization_details',
-      'co.date_created',
       knex.raw('ROUND((julianday("now") - julianday(ow.last_updated)) * 1440) as time_in_stage')
     );
-
-    console.log('[Workflow] Filter results:', {
-      totalOrdersAfterFilters: orders.length,
-      sampleOrderId: orders[0]?.order_id || 'none',
-      sampleDate: orders[0]?.date_created || 'none',
-    });
 
     // Get order data from cache
     const orderIds = orders.map((o: any) => o.order_id);

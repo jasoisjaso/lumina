@@ -157,7 +157,7 @@ class WooCommerceService {
       let page = 1;
       let hasMorePages = true;
 
-      console.log(`Fetching all orders for family ${familyId} (starting ${daysBack} days back)...`);
+      
 
       while (hasMorePages) {
         // Fetch orders with status=any to get ALL statuses including custom ones from Order Status Manager plugin
@@ -174,7 +174,6 @@ class WooCommerceService {
           hasMorePages = false;
         } else {
           allOrders = allOrders.concat(pageOrders);
-          console.log(`Fetched page ${page}: ${pageOrders.length} orders (total so far: ${allOrders.length})`);
 
           // Check if there are more pages
           if (pageOrders.length < 100) {
@@ -187,8 +186,6 @@ class WooCommerceService {
 
       const orders = allOrders;
 
-      console.log(`Fetched ${orders.length} orders from WooCommerce for family ${familyId}`);
-
       // Extract unique order statuses and their counts
       const statusCounts = new Map<string, number>();
       for (const order of orders) {
@@ -197,10 +194,8 @@ class WooCommerceService {
 
       const wcStatuses = Array.from(statusCounts.entries()).map(([status, count]) => ({
         status,
-        count,
+        count
       }));
-
-      console.log(`Detected WooCommerce statuses:`, wcStatuses);
 
       // Sync workflow stages from WooCommerce statuses (will create stages for custom statuses)
       try {

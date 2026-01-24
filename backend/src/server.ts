@@ -18,6 +18,7 @@ import photoGalleryRoutes from './routes/photo-gallery.routes';
 import setupRoutes from './routes/setup.routes';
 import workflowRoutes from './routes/workflow.routes';
 import debugRoutes from './routes/debug.routes';
+import featuresRoutes from './routes/features.routes';
 import { syncOrdersJob } from './jobs/sync-orders.job';
 import { syncCalendarsJob } from './jobs/sync-calendars.job';
 import fs from 'fs';
@@ -75,6 +76,10 @@ app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Apply API rate limiting to all /api routes (except health checks)
+import { apiLimiter } from './middleware/rateLimit.middleware';
+app.use('/api', apiLimiter);
+
 // Redis client
 const redisClient = createClient({
   url: `redis://${config.redis.host}:${config.redis.port}`
@@ -121,6 +126,7 @@ app.use('/api/v1/icloud-calendar', icloudCalendarRoutes);
 app.use('/api/v1/photos', photoGalleryRoutes);
 app.use('/api/v1/workflow', workflowRoutes);
 app.use('/api/v1/debug', debugRoutes);
+app.use('/api/v1/features', featuresRoutes);
 
 // 404 handler
 app.use((req, res) => {

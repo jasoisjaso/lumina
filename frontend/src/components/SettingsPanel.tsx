@@ -104,6 +104,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, onError }) => {
 
       await updateIntegrations(updatedIntegrations);
 
+      // Clear feature status cache so it refreshes on reload
+      sessionStorage.removeItem('lumina_features_status');
+
       // Reload page to refresh settings
       setTimeout(() => {
         window.location.reload();
@@ -252,6 +255,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, onError }) => {
       };
 
       await updateFeatures(updatedFeatures);
+
+      // Clear feature status cache so it refreshes on reload
+      sessionStorage.removeItem('lumina_features_status');
 
       // Reload page to refresh weather widget and other feature-dependent components
       setTimeout(() => {

@@ -234,6 +234,116 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 });
 
 /**
+ * POST /api/v1/users
+ * Create a new user directly with password (admin only)
+ * No invitation flow - user can log in immediately
+ */
+router.post('/', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
+      return;
+    }
+
+    const { email, firstName, lastName, password, role = 'member' } = req.body;
+
+    // Validate input
+    if (!email || !firstName || !lastName || !password) {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: 'Email, first name, last name, and password are required'
+      });
+      return;
+    }
+
+    // Validate password strength
+    if (password.length < 8) {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: 'Password must be at least 8 characters long',
+      });
+      return;
+    }
+
+    if (!/[A-Z]/.test(password)) {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: 'Password must contain at least one uppercase letter',
+      });
+      return;
+    }
+
+    if (!/[a-z]/.test(password)) {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: 'Password must contain at least one lowercase letter',
+      });
+      return;
+    }
+
+    if (!/[0-9]/.test(password)) {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: 'Password must contain at least one number',
+      });
+      return;
+    }
+
+    // Check if user already exists
+    const existingUser = await db('users')
+      .where({ email: email.toLowerCase() })
+      .first();
+
+    if (existingUser) {
+      res.status(409).json({
+        error: 'Conflict',
+        message: 'User with this email already exists'
+      });
+      return;
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Create active user
+    const [userId] = await db('users').insert({
+      family_id: req.user.familyId,
+      email: email.toLowerCase(),
+      first_name: firstName,
+      last_name: lastName,
+      password_hash: passwordHash,
+      role: role === 'admin' ? 'admin' : 'member',
+      status: 'active',
+      color: null,
+    });
+
+    const user = await db('users')
+      .where({ id: userId })
+      .select(
+        'id',
+        'email',
+        'first_name',
+        'last_name',
+        'role',
+        'status',
+        'created_at'
+      )
+      .first();
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user,
+    });
+  } catch (error: any) {
+    console.error('Create user error:', error);
+    res.status(500).json({
+      error: 'Server Error',
+      message: error.message || 'Failed to create user',
+    });
+  }
+});
+
+/**
  * POST /api/v1/users/invite
  * Invite a new user to the family (admin only)
  */
@@ -271,6 +381,11 @@ router.post('/invite', requireAdmin, async (req: AuthRequest, res: Response): Pr
     // Generate invitation token
     const invitationToken = crypto.randomBytes(32).toString('hex');
 
+    // Generate a placeholder password hash for invited users
+    // This will be replaced when they accept the invitation
+    // Using a random hash that cannot be guessed or used for login
+    const placeholderPasswordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+
     // Create invited user
     const [userId] = await db('users').insert({
       family_id: req.user.familyId,
@@ -282,7 +397,7 @@ router.post('/invite', requireAdmin, async (req: AuthRequest, res: Response): Pr
       invitation_token: invitationToken,
       invitation_sent_at: new Date(),
       invited_by: req.user.userId,
-      password_hash: null,
+      password_hash: placeholderPasswordHash, // Placeholder until invitation is accepted
       color: null,
     });
 

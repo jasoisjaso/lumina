@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import authService from '../services/auth.service';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
+import { sanitizeInput } from '../middleware/sanitize.middleware';
+import { loginLimiter, refreshTokenLimiter, strictLimiter } from '../middleware/rateLimit.middleware';
 
 const router = Router();
 
@@ -8,7 +10,7 @@ const router = Router();
  * POST /api/v1/auth/register
  * Register a new user
  */
-router.post('/register', async (req: Request, res: Response): Promise<void> => {
+router.post('/register', sanitizeInput, async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, first_name, last_name, family_id, role, color } = req.body;
 
@@ -51,8 +53,9 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
 /**
  * POST /api/v1/auth/login
  * Authenticate user and return JWT tokens
+ * Rate limited: 5 attempts per 15 minutes
  */
-router.post('/login', async (req: Request, res: Response): Promise<void> => {
+router.post('/login', loginLimiter, sanitizeInput, async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
@@ -88,8 +91,9 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 /**
  * POST /api/v1/auth/refresh
  * Refresh access token using refresh token
+ * Rate limited: 10 attempts per 15 minutes
  */
-router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
+router.post('/refresh', refreshTokenLimiter, sanitizeInput, async (req: Request, res: Response): Promise<void> => {
   try {
     const { refreshToken } = req.body;
 
@@ -121,7 +125,7 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
  * POST /api/v1/auth/logout
  * Revoke refresh token (logout user)
  */
-router.post('/logout', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/logout', authenticate, sanitizeInput, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { refreshToken } = req.body;
 
@@ -212,7 +216,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
  * PUT /api/v1/auth/me
  * Update current authenticated user's profile
  */
-router.put('/me', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/me', authenticate, sanitizeInput, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({
@@ -250,8 +254,9 @@ router.put('/me', authenticate, async (req: AuthRequest, res: Response): Promise
 /**
  * PUT /api/v1/auth/change-password
  * Change user's password
+ * Rate limited: 10 attempts per hour (strict)
  */
-router.put('/change-password', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/change-password', authenticate, strictLimiter, sanitizeInput, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({

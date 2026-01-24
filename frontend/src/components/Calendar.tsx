@@ -7,6 +7,7 @@ import { EventClickArg, DateSelectArg, EventContentArg } from '@fullcalendar/cor
 import { eventsAPI, UnifiedEvent, CreateEventRequest, UpdateEventRequest } from '../api/events.api';
 import { useAuthStore } from '../stores/auth.store';
 import { usePullToRefresh } from '../hooks/useTouchGestures';
+import { useFeatures } from '../hooks/useFeatures';
 
 interface CalendarProps {
   onError?: (error: string) => void;
@@ -14,6 +15,7 @@ interface CalendarProps {
 
 const Calendar: React.FC<CalendarProps> = ({ onError }) => {
   const { user } = useAuthStore();
+  const { features } = useFeatures();
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<UnifiedEvent | null>(null);
@@ -159,8 +161,17 @@ const Calendar: React.FC<CalendarProps> = ({ onError }) => {
     loadEvents();
   };
 
+  // Filter out WooCommerce orders if workflow feature is disabled
+  const filteredEvents = events.filter((event) => {
+    // Hide order events when WooCommerce is disabled
+    if (event.type === 'order' && !features?.workflow?.enabled) {
+      return false;
+    }
+    return true;
+  });
+
   // Transform UnifiedEvent to FullCalendar event format with Skylight colors
-  const calendarEvents = events.map((event) => ({
+  const calendarEvents = filteredEvents.map((event) => ({
     id: event.id,
     title: event.title,
     start: event.start,

@@ -2,6 +2,7 @@ import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './stores/auth.store';
 import { useSettingsStore } from './stores/settings.store';
+import { useFeatures } from './hooks/useFeatures';
 import Login from './components/Login';
 import Layout from './components/Layout';
 
@@ -24,12 +25,54 @@ const LoadingFallback: React.FC = () => (
   </div>
 );
 
+// Authenticated Dashboard Content (only loads after auth check)
+const DashboardContent: React.FC<{
+  onError: (error: string) => void;
+}> = ({ onError }) => {
+  const { features } = useFeatures();
+  const [currentView, setCurrentView] = useState<'calendar' | 'photos' | 'workflow'>('calendar');
+
+  const handleViewChange = (view: string) => {
+    if (view === 'calendar' || view === 'photos' || view === 'workflow') {
+      setCurrentView(view);
+    }
+  };
+
+  // Only show orders sidebar if WooCommerce is enabled
+  const showOrdersSidebar = currentView === 'calendar' && features?.workflow?.enabled;
+
+  return (
+    <Layout
+      onLogout={() => {}}
+      onError={onError}
+      sidebar={
+        showOrdersSidebar ? (
+          <Suspense fallback={<LoadingFallback />}>
+            <OrdersSidebar onError={onError} />
+          </Suspense>
+        ) : undefined
+      }
+      currentView={currentView}
+      onViewChange={handleViewChange}
+    >
+      <Suspense fallback={<LoadingFallback />}>
+        {currentView === 'calendar' ? (
+          <Calendar onError={onError} />
+        ) : currentView === 'photos' ? (
+          <PhotoGallery onError={onError} />
+        ) : (
+          <WorkflowBoard />
+        )}
+      </Suspense>
+    </Layout>
+  );
+};
+
 // Main Dashboard Component
 const Dashboard: React.FC = () => {
   const { isAuthenticated } = useAuthStore();
   const { loadSettings, isInitialized } = useSettingsStore();
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [currentView, setCurrentView] = useState<'calendar' | 'photos' | 'workflow'>('calendar');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [checkingSetup, setCheckingSetup] = useState(true);
@@ -79,12 +122,6 @@ const Dashboard: React.FC = () => {
     setErrorMessage(error);
   };
 
-  const handleViewChange = (view: string) => {
-    if (view === 'calendar' || view === 'photos' || view === 'workflow') {
-      setCurrentView(view);
-    }
-  };
-
   if (checkingSetup) {
     return <LoadingFallback />;
   }
@@ -94,19 +131,7 @@ const Dashboard: React.FC = () => {
   }
 
   return (
-    <Layout
-      onLogout={handleLogout}
-      onError={handleError}
-      sidebar={
-        currentView === 'calendar' ? (
-          <Suspense fallback={<LoadingFallback />}>
-            <OrdersSidebar onError={handleError} />
-          </Suspense>
-        ) : undefined
-      }
-      currentView={currentView}
-      onViewChange={handleViewChange}
-    >
+    <>
       {errorMessage && (
         <div className="mb-4 rounded-xl bg-red-50 border border-red-200 p-4">
           <div className="flex items-start space-x-3">
@@ -120,16 +145,8 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       )}
-      <Suspense fallback={<LoadingFallback />}>
-        {currentView === 'calendar' ? (
-          <Calendar onError={handleError} />
-        ) : currentView === 'photos' ? (
-          <PhotoGallery onError={handleError} />
-        ) : (
-          <WorkflowBoard />
-        )}
-      </Suspense>
-    </Layout>
+      <DashboardContent onError={handleError} />
+    </>
   );
 };
 

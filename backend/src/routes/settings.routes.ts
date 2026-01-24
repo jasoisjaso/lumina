@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import { settingsService, SettingsType } from '../services/settings.service';
+import { sanitizeInput } from '../middleware/sanitize.middleware';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.middleware';
 import os from 'os';
 import fs from 'fs';
@@ -7,6 +8,8 @@ import path from 'path';
 import knex from '../database/knex';
 
 const router = express.Router();
+
+router.use(sanitizeInput);
 
 /**
  * Settings Routes

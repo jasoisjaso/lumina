@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { usersAPI, User, InviteUserRequest } from '../api/users.api';
+import { usersAPI, User, CreateUserRequest } from '../api/users.api';
 import { useAuthStore } from '../stores/auth.store';
 
 interface UserManagementProps {
@@ -12,13 +12,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ onError }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
-  const [invitationLink, setInvitationLink] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Form state
-  const [formData, setFormData] = useState<InviteUserRequest>({
+  const [formData, setFormData] = useState<CreateUserRequest>({
     email: '',
     firstName: '',
     lastName: '',
+    password: '',
     role: 'member',
   });
 
@@ -40,22 +41,22 @@ const UserManagement: React.FC<UserManagementProps> = ({ onError }) => {
     loadUsers();
   }, []);
 
-  const handleInviteUser = async (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
       setIsInviting(true);
-      const response = await usersAPI.inviteUser(formData);
+      const response = await usersAPI.createUser(formData);
 
-      setInvitationLink(response.invitationLink);
-      setFormData({ email: '', firstName: '', lastName: '', role: 'member' });
+      setSuccessMessage(`User created successfully! Email: ${formData.email}`);
+      setFormData({ email: '', firstName: '', lastName: '', password: '', role: 'member' });
       setShowInviteForm(false);
 
       await loadUsers();
     } catch (err: any) {
-      const errorMessage = err.response?.data?.message || 'Failed to invite user';
+      const errorMessage = err.response?.data?.message || 'Failed to create user';
       onError?.(errorMessage);
-      console.error('Invite user error:', err);
+      console.error('Create user error:', err);
     } finally {
       setIsInviting(false);
     }
@@ -129,13 +130,13 @@ const UserManagement: React.FC<UserManagementProps> = ({ onError }) => {
             onClick={() => setShowInviteForm(!showInviteForm)}
             className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
           >
-            + Invite Member
+            + Add Member
           </button>
         )}
       </div>
 
-      {/* Invitation Link Display */}
-      {invitationLink && (
+      {/* Success Message */}
+      {successMessage && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
           <div className="flex items-start space-x-3">
             <svg
@@ -152,45 +153,30 @@ const UserManagement: React.FC<UserManagementProps> = ({ onError }) => {
               />
             </svg>
             <div className="flex-1">
-              <p className="text-sm font-medium text-emerald-800 mb-2">
-                Invitation sent successfully!
+              <p className="text-sm font-medium text-emerald-800">
+                {successMessage}
               </p>
-              <p className="text-xs text-emerald-700 mb-2">
-                Share this link with the new member:
+              <p className="text-xs text-emerald-700 mt-1">
+                The user can now log in with their email and password.
               </p>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  value={invitationLink}
-                  readOnly
-                  className="flex-1 px-3 py-2 text-xs bg-white border border-emerald-300 rounded-lg focus:outline-none font-mono"
-                />
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(invitationLink);
-                    alert('Link copied to clipboard!');
-                  }}
-                  className="px-3 py-2 text-xs font-medium text-emerald-700 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-50"
-                >
-                  Copy
-                </button>
-              </div>
-              <button
-                onClick={() => setInvitationLink(null)}
-                className="mt-2 text-xs text-emerald-600 hover:text-emerald-700"
-              >
-                Dismiss
-              </button>
             </div>
+            <button
+              onClick={() => setSuccessMessage(null)}
+              className="text-emerald-600 hover:text-emerald-700"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
       )}
 
-      {/* Invite Form */}
+      {/* Create User Form */}
       {showInviteForm && isAdmin && (
         <div className="bg-white border border-slate-200 rounded-lg p-6">
-          <h4 className="text-md font-semibold text-slate-800 mb-4">Invite New Member</h4>
-          <form onSubmit={handleInviteUser} className="space-y-4">
+          <h4 className="text-md font-semibold text-slate-800 mb-4">Add New Member</h4>
+          <form onSubmit={handleCreateUser} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -233,6 +219,24 @@ const UserManagement: React.FC<UserManagementProps> = ({ onError }) => {
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
+                Password *
+              </label>
+              <input
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required
+                minLength={8}
+                placeholder="At least 8 characters"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Must contain: 8+ characters, uppercase, lowercase, and a number
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
                 Role
               </label>
               <select
@@ -251,7 +255,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onError }) => {
                 disabled={isInviting}
                 className="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
               >
-                {isInviting ? 'Sending...' : 'Send Invitation'}
+                {isInviting ? 'Creating...' : 'Create User'}
               </button>
               <button
                 type="button"

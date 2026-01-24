@@ -20,6 +20,14 @@ export interface User {
   updated_at: string;
 }
 
+export interface CreateUserRequest {
+  email: string;
+  firstName: string;
+  lastName: string;
+  password: string;
+  role?: 'admin' | 'member';
+}
+
 export interface InviteUserRequest {
   email: string;
   firstName: string;
@@ -38,6 +46,20 @@ export const usersAPI = {
    */
   async getUsers(): Promise<{ users: User[]; count: number }> {
     const response = await apiClient.get<{ users: User[]; count: number }>('/users');
+    return response.data;
+  },
+
+  /**
+   * Create a new user directly with password (no invitation)
+   */
+  async createUser(data: CreateUserRequest): Promise<{
+    message: string;
+    user: User;
+  }> {
+    const response = await apiClient.post<{
+      message: string;
+      user: User;
+    }>('/users', data);
     return response.data;
   },
 

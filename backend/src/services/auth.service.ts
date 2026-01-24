@@ -50,6 +50,30 @@ class AuthService {
   private readonly REFRESH_TOKEN_EXPIRY = '7d'; // 7 days
 
   /**
+   * Validate password strength
+   * Requirements:
+   * - Minimum 8 characters
+   * - At least one uppercase letter
+   * - At least one lowercase letter
+   * - At least one number
+   */
+  private validatePassword(password: string): { valid: boolean; error?: string } {
+    if (password.length < 8) {
+      return { valid: false, error: 'Password must be at least 8 characters long' };
+    }
+    if (!/[A-Z]/.test(password)) {
+      return { valid: false, error: 'Password must contain at least one uppercase letter' };
+    }
+    if (!/[a-z]/.test(password)) {
+      return { valid: false, error: 'Password must contain at least one lowercase letter' };
+    }
+    if (!/[0-9]/.test(password)) {
+      return { valid: false, error: 'Password must contain at least one number' };
+    }
+    return { valid: true };
+  }
+
+  /**
    * Hash a password using bcrypt
    */
   async hashPassword(password: string): Promise<string> {
@@ -159,9 +183,10 @@ class AuthService {
       throw new Error('Email already registered');
     }
 
-    // Validate password strength (minimum 6 characters)
-    if (data.password.length < 6) {
-      throw new Error('Password must be at least 6 characters long');
+    // Validate password strength
+    const passwordValidation = this.validatePassword(data.password);
+    if (!passwordValidation.valid) {
+      throw new Error(passwordValidation.error);
     }
 
     // Hash password
@@ -195,6 +220,15 @@ class AuthService {
     const user = await db('users').where({ email }).first();
     if (!user) {
       throw new Error('Invalid email or password');
+    }
+
+    // Check if user account is active
+    if (user.status === 'invited') {
+      throw new Error('Please accept your invitation before logging in');
+    }
+
+    if (user.status === 'disabled') {
+      throw new Error('Your account has been disabled');
     }
 
     // Verify password
@@ -306,9 +340,10 @@ class AuthService {
       throw new Error('Current password is incorrect');
     }
 
-    // Validate new password
-    if (newPassword.length < 6) {
-      throw new Error('New password must be at least 6 characters long');
+    // Validate new password strength
+    const passwordValidation = this.validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      throw new Error(passwordValidation.error);
     }
 
     // Hash and update password

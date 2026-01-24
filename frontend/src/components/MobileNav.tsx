@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useFeatures } from '../hooks/useFeatures';
+import { FeatureStatus } from '../api/features.api';
 
 type View = 'dashboard' | 'calendar' | 'photos' | 'weather' | 'workflow';
 
@@ -22,8 +24,50 @@ const MobileNav: React.FC<MobileNavProps> = ({
   onKioskClick,
 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const { features, loading: featuresLoading } = useFeatures();
 
-  const navItems: NavItem[] = [
+  /**
+   * Render status badge for a feature
+   */
+  const renderStatusBadge = (feature: FeatureStatus) => {
+    if (!feature.message || feature.message === 'Active' || feature.message === 'Ready') {
+      return null;
+    }
+
+    let badgeClass = '';
+    let badgeText = feature.message;
+
+    switch (feature.message) {
+      case 'Broken':
+        badgeClass = 'bg-red-100 text-red-700 border-red-200';
+        break;
+      case 'Setup required':
+      case 'Connecting':
+        badgeClass = 'bg-yellow-100 text-yellow-700 border-yellow-200';
+        badgeText = 'Setup';
+        break;
+      case 'Empty':
+      case 'No orders yet':
+        badgeClass = 'bg-gray-100 text-gray-600 border-gray-200';
+        badgeText = 'Empty';
+        break;
+      case 'Synced':
+        badgeClass = 'bg-green-100 text-green-700 border-green-200';
+        badgeText = '✓';
+        break;
+      default:
+        badgeClass = 'bg-blue-100 text-blue-700 border-blue-200';
+    }
+
+    return (
+      <span className={`ml-2 px-2 py-0.5 text-xs font-medium rounded border ${badgeClass}`}>
+        {badgeText}
+      </span>
+    );
+  };
+
+  // Define all possible nav items
+  const allNavItems: NavItem[] = [
     {
       id: 'dashboard',
       label: 'Home',
@@ -60,7 +104,41 @@ const MobileNav: React.FC<MobileNavProps> = ({
         </svg>
       ),
     },
+    {
+      id: 'workflow',
+      label: 'Workflow',
+      icon: (
+        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        </svg>
+      ),
+    },
   ];
+
+  // Filter nav items based on feature status
+  const navItems = allNavItems.filter((item) => {
+    // Always show dashboard and calendar
+    if (item.id === 'dashboard' || item.id === 'calendar') {
+      return true;
+    }
+
+    // Don't filter if features haven't loaded yet (show all by default)
+    if (featuresLoading || !features) {
+      return true;
+    }
+
+    // Filter based on feature status
+    switch (item.id) {
+      case 'photos':
+        return features.photos?.canShow;
+      case 'workflow':
+        return features.workflow?.canShow;
+      case 'weather':
+        return features.weather?.canShow;
+      default:
+        return true;
+    }
+  });
 
   const handleNavClick = (viewId: View) => {
     if (viewId === 'dashboard') {
@@ -213,7 +291,7 @@ const MobileNav: React.FC<MobileNavProps> = ({
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-all ${
+                className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-all relative ${
                   isActive
                     ? 'text-indigo-600 bg-indigo-50'
                     : 'text-slate-600 hover:bg-slate-50'
@@ -225,8 +303,23 @@ const MobileNav: React.FC<MobileNavProps> = ({
                 aria-label={item.label}
                 aria-current={isActive ? 'page' : undefined}
               >
-                <div className={`transition-transform ${isActive ? 'scale-110' : ''}`}>
+                <div className={`transition-transform ${isActive ? 'scale-110' : ''} relative`}>
                   {item.icon}
+                  {/* Status indicator dot */}
+                  {features && item.id !== 'dashboard' && (() => {
+                    const featureKey = item.id as 'calendar' | 'photos' | 'workflow' | 'weather';
+                    const feature = features[featureKey];
+                    if (feature && typeof feature === 'object' && feature.message && feature.message !== 'Active' && feature.message !== 'Ready') {
+                      const dotColor = feature.message === 'Broken' ? 'bg-red-500' :
+                                     feature.message === 'Setup required' || feature.message === 'Connecting' ? 'bg-yellow-500' :
+                                     feature.message === 'Empty' || feature.message === 'No orders yet' ? 'bg-gray-400' :
+                                     feature.message === 'Synced' ? 'bg-green-500' : 'bg-blue-500';
+                      return (
+                        <span className={`absolute top-0 right-0 w-2 h-2 ${dotColor} rounded-full border border-white`} />
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
                 <span
                   className={`text-xs font-medium mt-1 ${
