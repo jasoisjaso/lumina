@@ -11,7 +11,6 @@ const Calendar = lazy(() => import('./components/Calendar'));
 const PhotoGallery = lazy(() => import('./components/PhotoGallery'));
 const OrdersSidebar = lazy(() => import('./components/OrdersSidebar'));
 const Kiosk = lazy(() => import('./components/Kiosk'));
-const UserProfile = lazy(() => import('./components/UserProfile'));
 const SetupWizard = lazy(() => import('./components/SetupWizard'));
 const WorkflowBoard = lazy(() => import('./components/workflow/WorkflowBoard'));
 
@@ -183,28 +182,6 @@ const KioskMode: React.FC = () => {
   );
 };
 
-// Protected Route for Profile
-const ProfilePage: React.FC = () => {
-  const { isAuthenticated } = useAuthStore();
-  const { loadSettings, isInitialized } = useSettingsStore();
-
-  useEffect(() => {
-    if (isAuthenticated && !isInitialized) {
-      loadSettings();
-    }
-  }, [isAuthenticated, isInitialized, loadSettings]);
-
-  if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
-  }
-
-  return (
-    <Suspense fallback={<LoadingFallback />}>
-      <UserProfile />
-    </Suspense>
-  );
-};
-
 // Setup Wizard Page
 const SetupPage: React.FC = () => {
   const navigate = useNavigate();
@@ -228,7 +205,6 @@ function App() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/setup" element={<SetupPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
         <Route path="/kiosk" element={<KioskMode />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

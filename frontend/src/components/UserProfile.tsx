@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import CalendarSharingSettings from './CalendarSharingSettings';
 import GoogleCalendarSetup from './GoogleCalendarSetup';
+import { useAuthStore } from '../stores/auth.store';
+import usersAPI from '../api/users.api';
+import userSettingsAPI from '../api/user-settings.api';
 
 /**
  * User Profile Component
@@ -116,14 +119,90 @@ const AccountTab: React.FC = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const handleUpdateProfile = () => {
-    // TODO: Implement profile update API call
-    console.log('Update profile');
+  // Add loading and message states
+  const [loading, setLoading] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Get current user from auth store
+  const { user } = useAuthStore();
+
+  // Load user data on mount
+  useEffect(() => {
+    if (user) {
+      setFirstName(user.first_name || '');
+      setLastName(user.last_name || '');
+      setEmail(user.email || '');
+    }
+  }, [user]);
+
+  const handleUpdateProfile = async () => {
+    if (!user) return;
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      await usersAPI.updateProfile(user.id, {
+        firstName,
+        lastName,
+        email,
+      });
+
+      setMessage({ type: 'success', text: 'Profile updated successfully!' });
+    } catch (error: any) {
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.message || 'Failed to update profile'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleChangePassword = () => {
-    // TODO: Implement password change API call
-    console.log('Change password');
+  const handleChangePassword = async () => {
+    if (!user) return;
+
+    // Frontend validation
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordMessage({ type: 'error', text: 'All password fields are required' });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage({ type: 'error', text: 'New passwords do not match' });
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordMessage({ type: 'error', text: 'New password must be at least 8 characters' });
+      return;
+    }
+
+    setPasswordLoading(true);
+    setPasswordMessage(null);
+
+    try {
+      await usersAPI.changePassword(user.id, {
+        currentPassword,
+        newPassword,
+      });
+
+      setPasswordMessage({ type: 'success', text: 'Password changed successfully!' });
+
+      // Clear password fields
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      setPasswordMessage({
+        type: 'error',
+        text: error.response?.data?.message || 'Failed to change password'
+      });
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   return (
@@ -131,6 +210,16 @@ const AccountTab: React.FC = () => {
       {/* Profile Information */}
       <div>
         <h2 className="text-xl font-semibold text-slate-900 mb-4">Profile Information</h2>
+
+        {/* Success/Error Message */}
+        {message && (
+          <div className={`mb-4 p-3 rounded-lg ${
+            message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+          }`}>
+            {message.text}
+          </div>
+        )}
+
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -172,9 +261,10 @@ const AccountTab: React.FC = () => {
           </div>
           <button
             onClick={handleUpdateProfile}
-            className="px-4 py-2 bg-indigo-500 text-white font-medium rounded-lg hover:bg-indigo-600 transition-colors"
+            disabled={loading}
+            className="px-4 py-2 bg-indigo-500 text-white font-medium rounded-lg hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Save Changes
+            {loading ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>
@@ -182,6 +272,16 @@ const AccountTab: React.FC = () => {
       {/* Change Password */}
       <div className="pt-8 border-t border-slate-200">
         <h2 className="text-xl font-semibold text-slate-900 mb-4">Change Password</h2>
+
+        {/* Password Success/Error Message */}
+        {passwordMessage && (
+          <div className={`mb-4 p-3 rounded-lg ${
+            passwordMessage.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+          }`}>
+            {passwordMessage.text}
+          </div>
+        )}
+
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -206,6 +306,9 @@ const AccountTab: React.FC = () => {
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="Enter new password"
             />
+            <p className="mt-1 text-sm text-slate-600">
+              Must be at least 8 characters with uppercase, lowercase, and number
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -221,9 +324,10 @@ const AccountTab: React.FC = () => {
           </div>
           <button
             onClick={handleChangePassword}
-            className="px-4 py-2 bg-indigo-500 text-white font-medium rounded-lg hover:bg-indigo-600 transition-colors"
+            disabled={passwordLoading}
+            className="px-4 py-2 bg-indigo-500 text-white font-medium rounded-lg hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Update Password
+            {passwordLoading ? 'Updating...' : 'Update Password'}
           </button>
         </div>
       </div>
@@ -283,13 +387,92 @@ const PreferencesTab: React.FC = () => {
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(false);
 
-  const handleSavePreferences = () => {
-    // TODO: Implement preferences save API call
-    console.log('Save preferences');
+  // Add permission state
+  const [canViewOrders, setCanViewOrders] = useState(false);
+  const [canManageOrders, setCanManageOrders] = useState(false);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const { user } = useAuthStore();
+
+  // Load preferences on mount
+  useEffect(() => {
+    loadPreferences();
+  }, [user]);
+
+  const loadPreferences = async () => {
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      // Load user settings
+      const prefsData = await userSettingsAPI.getPreferences();
+
+      setTimezone(prefsData.timezone || 'UTC');
+      setEmailNotifications(prefsData.notifications?.email ?? true);
+      setPushNotifications(prefsData.notifications?.push ?? false);
+
+      // Load user permissions
+      const permissionsResponse = await usersAPI.getUserPermissions(user.id);
+      const userPermissions = permissionsResponse.permissions;
+
+      setCanViewOrders(userPermissions.includes('view_orders'));
+      setCanManageOrders(userPermissions.includes('manage_orders'));
+    } catch (error) {
+      console.error('Failed to load preferences:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleSavePreferences = async () => {
+    if (!user) return;
+
+    setSaving(true);
+    setMessage(null);
+
+    try {
+      // Save user settings (preferences)
+      await userSettingsAPI.updatePreferences({
+        timezone,
+        notifications: {
+          email: emailNotifications,
+          push: pushNotifications,
+        },
+      });
+
+      setMessage({ type: 'success', text: 'Preferences saved successfully!' });
+    } catch (error: any) {
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.message || 'Failed to save preferences'
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl space-y-8">
+      {/* Success/Error Message */}
+      {message && (
+        <div className={`p-3 rounded-lg ${
+          message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+        }`}>
+          {message.text}
+        </div>
+      )}
+
       {/* General Preferences */}
       <div>
         <h2 className="text-xl font-semibold text-slate-900 mb-4">General Preferences</h2>
@@ -308,6 +491,9 @@ const PreferencesTab: React.FC = () => {
               <option value="America/Chicago">Central Time</option>
               <option value="America/Denver">Mountain Time</option>
               <option value="America/Los_Angeles">Pacific Time</option>
+              <option value="Australia/Sydney">Sydney</option>
+              <option value="Australia/Melbourne">Melbourne</option>
+              <option value="Australia/Brisbane">Brisbane</option>
             </select>
           </div>
         </div>
@@ -351,11 +537,48 @@ const PreferencesTab: React.FC = () => {
         </div>
       </div>
 
+      {/* Feature Permissions - READ ONLY for non-admins */}
+      <div className="pt-8 border-t border-slate-200">
+        <h2 className="text-xl font-semibold text-slate-900 mb-4">Feature Access</h2>
+        <p className="text-sm text-slate-600 mb-4">
+          Your current access permissions. Contact an admin to request changes.
+        </p>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-slate-900">WooCommerce Workflow Access</p>
+              <p className="text-sm text-slate-600">
+                {canManageOrders
+                  ? 'You can view and edit orders'
+                  : canViewOrders
+                    ? 'You can view orders (read-only)'
+                    : 'You cannot access the workflow board'
+                }
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                  canManageOrders
+                    ? 'bg-green-100 text-green-800'
+                    : canViewOrders
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {canManageOrders ? 'Full Access' : canViewOrders ? 'View Only' : 'No Access'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <button
         onClick={handleSavePreferences}
-        className="px-4 py-2 bg-indigo-500 text-white font-medium rounded-lg hover:bg-indigo-600 transition-colors"
+        disabled={saving}
+        className="px-4 py-2 bg-indigo-500 text-white font-medium rounded-lg hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        Save Preferences
+        {saving ? 'Saving...' : 'Save Preferences'}
       </button>
     </div>
   );

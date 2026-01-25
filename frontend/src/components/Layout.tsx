@@ -266,7 +266,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, sidebar, onError, c
                     <button
                       onClick={() => {
                         setShowUserMenu(false);
-                        navigate('/profile');
+                        setShowSettings(true);
                       }}
                       className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
                       style={{ minHeight: '44px' }}

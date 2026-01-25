@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import db from '../database/knex';
 import authService from '../services/auth.service';
+import permissionService from '../services/permission.service';
 import { authenticate, AuthRequest, requireAdmin } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -584,6 +585,147 @@ router.put('/:id/role', requireAdmin, async (req: AuthRequest, res: Response): P
       error: 'Update Failed',
       message: error.message || 'Failed to update user role',
     });
+  }
+});
+
+/**
+ * PUT /api/v1/users/:id/password
+ * Change user password (self only)
+ */
+router.put('/:id/password', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
+      return;
+    }
+
+    const userId = parseInt(req.params.id);
+    const { currentPassword, newPassword } = req.body;
+
+    if (isNaN(userId)) {
+      res.status(400).json({ error: 'Validation Error', message: 'Invalid user ID' });
+      return;
+    }
+
+    // Users can only change their own password
+    if (userId !== req.user.userId) {
+      res.status(403).json({
+        error: 'Forbidden',
+        message: 'You can only change your own password'
+      });
+      return;
+    }
+
+    // Validate inputs
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: 'Current password and new password are required'
+      });
+      return;
+    }
+
+    await authService.changePassword(userId, currentPassword, newPassword);
+
+    res.status(200).json({ message: 'Password changed successfully' });
+  } catch (error: any) {
+    console.error('Change password error:', error);
+    res.status(400).json({
+      error: 'Password Change Failed',
+      message: error.message || 'Failed to change password',
+    });
+  }
+});
+
+/**
+ * GET /api/v1/users/:id/permissions
+ * Get user's permissions (admin only, or self)
+ */
+router.get('/:id/permissions', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
+      return;
+    }
+
+    const userId = parseInt(req.params.id);
+
+    if (isNaN(userId)) {
+      res.status(400).json({ error: 'Validation Error', message: 'Invalid user ID' });
+      return;
+    }
+
+    const isSelf = userId === req.user.userId;
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isSelf && !isAdmin) {
+      res.status(403).json({ error: 'Forbidden', message: 'Access denied' });
+      return;
+    }
+
+    const permissions = await permissionService.getUserPermissions(userId);
+    const customPermissions = await permissionService.getUserCustomPermissions(userId);
+
+    res.status(200).json({
+      permissions,
+      customPermissions
+    });
+  } catch (error: any) {
+    console.error('Get user permissions error:', error);
+    res.status(500).json({ error: 'Server Error', message: 'Failed to get permissions' });
+  }
+});
+
+/**
+ * PUT /api/v1/users/:id/permissions
+ * Update user's custom permissions (admin only)
+ */
+router.put('/:id/permissions', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
+      return;
+    }
+
+    const userId = parseInt(req.params.id);
+    const { permissions } = req.body;
+
+    if (isNaN(userId)) {
+      res.status(400).json({ error: 'Validation Error', message: 'Invalid user ID' });
+      return;
+    }
+
+    // Can't modify own permissions
+    if (userId === req.user.userId) {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: 'Cannot modify your own permissions'
+      });
+      return;
+    }
+
+    // Validate permissions array
+    if (!Array.isArray(permissions)) {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: 'Permissions must be an array'
+      });
+      return;
+    }
+
+    // Apply each permission change
+    for (const perm of permissions) {
+      if (perm.granted) {
+        await permissionService.grantPermission(userId, perm.name);
+      } else {
+        await permissionService.revokePermission(userId, perm.name);
+      }
+    }
+
+    res.status(200).json({ message: 'Permissions updated successfully' });
+  } catch (error: any) {
+    console.error('Update user permissions error:', error);
+    res.status(500).json({ error: 'Server Error', message: 'Failed to update permissions' });
   }
 });
 
