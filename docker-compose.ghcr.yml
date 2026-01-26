@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
 
   backend:
-    image: ghcr.io/hcfdc/lumina-backend:latest
+    image: ghcr.io/jasoisjaso/lumina-backend:latest
     container_name: lumina-backend
     ports:
       - "3001:3001"
@@ -32,7 +32,7 @@ services:
       retries: 3
 
   frontend:
-    image: ghcr.io/hcfdc/lumina-frontend:latest
+    image: ghcr.io/jasoisjaso/lumina-frontend:latest
     container_name: lumina-frontend
     ports:
       - "3000:80"

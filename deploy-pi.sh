@@ -10,9 +10,9 @@ echo "Lumina Raspberry Pi Deployment"
 echo "=================================="
 echo ""
 
-# Check if docker-compose is available
-if ! command -v docker-compose &> /dev/null; then
-    echo "Error: docker-compose not found. Please install docker-compose first."
+# Check if docker compose is available
+if ! command -v docker &> /dev/null; then
+    echo "Error: docker not found. Please install docker first."
     exit 1
 fi
 
@@ -26,7 +26,7 @@ fi
 
 # Stop existing containers
 echo "🛑 Stopping existing containers..."
-docker-compose -f docker-compose.ghcr.yml down
+docker compose -f docker-compose.ghcr.yml down
 
 # Clean database if fresh install
 if [[ "$FRESH_INSTALL" == true ]]; then
@@ -47,11 +47,11 @@ fi
 
 # Pull latest images
 echo "📥 Pulling latest Docker images from GitHub Container Registry..."
-docker-compose -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.ghcr.yml pull
 
 # Start containers
 echo "🚀 Starting Lumina..."
-docker-compose -f docker-compose.ghcr.yml up -d
+docker compose -f docker-compose.ghcr.yml up -d
 
 # Wait for backend to be healthy
 echo ""
@@ -84,7 +84,7 @@ fi
 
 echo ""
 echo "📋 Useful commands:"
-echo "   View logs:    docker-compose -f docker-compose.ghcr.yml logs -f"
-echo "   Stop:         docker-compose -f docker-compose.ghcr.yml down"
-echo "   Restart:      docker-compose -f docker-compose.ghcr.yml restart"
+echo "   View logs:    docker compose -f docker-compose.ghcr.yml logs -f"
+echo "   Stop:         docker compose -f docker-compose.ghcr.yml down"
+echo "   Restart:      docker compose -f docker-compose.ghcr.yml restart"
 echo ""
