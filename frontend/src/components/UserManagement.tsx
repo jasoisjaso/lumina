@@ -14,6 +14,17 @@ const UserManagement: React.FC<UserManagementProps> = ({ onError }) => {
   const [isInviting, setIsInviting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Password reset state
+  const [showPasswordReset, setShowPasswordReset] = useState<number | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+
+  // Permissions state
+  const [expandedUser, setExpandedUser] = useState<number | null>(null);
+  const [userPermissions, setUserPermissions] = useState<{ [userId: number]: { permissions: string[]; customPermissions: Array<{ name: string; granted: boolean }> } }>({});
+  const [isLoadingPermissions, setIsLoadingPermissions] = useState<{ [userId: number]: boolean }>({});
+  const [isSavingPermissions, setIsSavingPermissions] = useState(false);
+
   // Form state
   const [formData, setFormData] = useState<CreateUserRequest>({
     email: '',
@@ -85,6 +96,74 @@ const UserManagement: React.FC<UserManagementProps> = ({ onError }) => {
       const errorMessage = err.response?.data?.message || 'Failed to delete user';
       onError?.(errorMessage);
       console.error('Delete user error:', err);
+    }
+  };
+
+  const handleResetPassword = async (userId: number) => {
+    if (!newPassword) {
+      onError?.('Please enter a new password');
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      onError?.('Password must be at least 8 characters');
+      return;
+    }
+
+    try {
+      setIsResettingPassword(true);
+      await usersAPI.resetPassword(userId, newPassword);
+      setSuccessMessage('Password reset successfully! User has been logged out of all devices.');
+      setShowPasswordReset(null);
+      setNewPassword('');
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.message || 'Failed to reset password';
+      onError?.(errorMessage);
+      console.error('Reset password error:', err);
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
+  const loadUserPermissions = async (userId: number) => {
+    try {
+      setIsLoadingPermissions({ ...isLoadingPermissions, [userId]: true });
+      const perms = await usersAPI.getUserPermissions(userId);
+      setUserPermissions({ ...userPermissions, [userId]: perms });
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.message || 'Failed to load permissions';
+      onError?.(errorMessage);
+      console.error('Load permissions error:', err);
+    } finally {
+      setIsLoadingPermissions({ ...isLoadingPermissions, [userId]: false });
+    }
+  };
+
+  const toggleUserExpanded = async (userId: number) => {
+    if (expandedUser === userId) {
+      setExpandedUser(null);
+    } else {
+      setExpandedUser(userId);
+      if (!userPermissions[userId]) {
+        await loadUserPermissions(userId);
+      }
+    }
+  };
+
+  const togglePermission = async (userId: number, permissionName: string, currentlyGranted: boolean) => {
+    try {
+      setIsSavingPermissions(true);
+      await usersAPI.updateUserPermissions(userId, [{ name: permissionName, granted: !currentlyGranted }]);
+
+      // Reload permissions
+      await loadUserPermissions(userId);
+      setSuccessMessage(`Permission ${!currentlyGranted ? 'granted' : 'revoked'} successfully!`);
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.message || 'Failed to update permission';
+      onError?.(errorMessage);
+      console.error('Toggle permission error:', err);
+    } finally {
+      setIsSavingPermissions(false);
     }
   };
 
@@ -274,65 +353,196 @@ const UserManagement: React.FC<UserManagementProps> = ({ onError }) => {
         <h4 className="text-md font-semibold text-slate-800 mb-3">Active Members ({activeUsers.length})</h4>
         <div className="space-y-2">
           {activeUsers.map((user) => (
-            <div
-              key={user.id}
-              className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-between"
-            >
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                  <span className="text-sm font-medium text-indigo-700">
-                    {user.first_name[0]}{user.last_name[0]}
-                  </span>
+            <div key={user.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+              {/* User Header */}
+              <div className="p-4 flex items-center justify-between">
+                <div className="flex items-center space-x-3 flex-1">
+                  <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+                    <span className="text-sm font-medium text-indigo-700">
+                      {user.first_name[0]}{user.last_name[0]}
+                    </span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-800">
+                      {user.first_name} {user.last_name}
+                      {user.id === currentUser?.id && (
+                        <span className="ml-2 text-xs text-slate-500">(You)</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-slate-600">{user.email}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-800">
-                    {user.first_name} {user.last_name}
-                    {user.id === currentUser?.id && (
-                      <span className="ml-2 text-xs text-slate-500">(You)</span>
-                    )}
-                  </p>
-                  <p className="text-xs text-slate-600">{user.email}</p>
+
+                <div className="flex items-center space-x-2">
+                  {getStatusBadge(user.status)}
+
+                  {isAdmin && (
+                    <select
+                      value={user.role}
+                      onChange={(e) => handleUpdateRole(user.id, e.target.value as 'admin' | 'member')}
+                      disabled={user.id === currentUser?.id}
+                      className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  )}
+
+                  {!isAdmin && (
+                    <span className="px-2 py-1 text-xs text-slate-600">
+                      {user.role === 'admin' ? 'Admin' : 'Member'}
+                    </span>
+                  )}
+
+                  {isAdmin && user.id !== currentUser?.id && (
+                    <>
+                      <button
+                        onClick={() => setShowPasswordReset(user.id)}
+                        className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        title="Reset password"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                        </svg>
+                      </button>
+
+                      <button
+                        onClick={() => toggleUserExpanded(user.id)}
+                        className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                        title="Manage permissions"
+                      >
+                        <svg className={`w-4 h-4 transform transition-transform ${expandedUser === user.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteUser(user.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Remove member"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3">
-                {getStatusBadge(user.status)}
+              {/* Password Reset Modal */}
+              {showPasswordReset === user.id && (
+                <div className="border-t border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-800 mb-3">Reset Password</h5>
+                  <div className="space-y-3">
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password"
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                    <p className="text-xs text-slate-600">
+                      Must be at least 8 characters with uppercase, lowercase, and number
+                    </p>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleResetPassword(user.id)}
+                        disabled={isResettingPassword}
+                        className="flex-1 px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowPasswordReset(null);
+                          setNewPassword('');
+                        }}
+                        className="flex-1 px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-                {isAdmin && (
-                  <select
-                    value={user.role}
-                    onChange={(e) => handleUpdateRole(user.id, e.target.value as 'admin' | 'member')}
-                    disabled={user.id === currentUser?.id}
-                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                )}
+              {/* Permissions Section */}
+              {expandedUser === user.id && (
+                <div className="border-t border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-800 mb-3">Permissions</h5>
+                  {isLoadingPermissions[user.id] ? (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* View Orders Permission */}
+                      <label className="flex items-center justify-between cursor-pointer group">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">View Orders</p>
+                          <p className="text-xs text-slate-600">Can view the WooCommerce workflow board</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={userPermissions[user.id]?.permissions?.includes('view_orders') || false}
+                          onChange={() => togglePermission(
+                            user.id,
+                            'view_orders',
+                            userPermissions[user.id]?.permissions?.includes('view_orders') || false
+                          )}
+                          disabled={isSavingPermissions}
+                          className="sr-only"
+                        />
+                        <div className={`w-11 h-6 rounded-full transition-colors ${
+                          userPermissions[user.id]?.permissions?.includes('view_orders') ? 'bg-indigo-500' : 'bg-slate-300'
+                        } ${isSavingPermissions ? 'opacity-50' : ''}`}>
+                          <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform transform ${
+                            userPermissions[user.id]?.permissions?.includes('view_orders') ? 'translate-x-6' : 'translate-x-0.5'
+                          } mt-0.5`}></div>
+                        </div>
+                      </label>
 
-                {!isAdmin && (
-                  <span className="px-2 py-1 text-xs text-slate-600">
-                    {user.role === 'admin' ? 'Admin' : 'Member'}
-                  </span>
-                )}
+                      {/* Manage Orders Permission */}
+                      <label className="flex items-center justify-between cursor-pointer group">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">Manage Orders</p>
+                          <p className="text-xs text-slate-600">Can edit orders and move them between stages</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={userPermissions[user.id]?.permissions?.includes('manage_orders') || false}
+                          onChange={() => togglePermission(
+                            user.id,
+                            'manage_orders',
+                            userPermissions[user.id]?.permissions?.includes('manage_orders') || false
+                          )}
+                          disabled={isSavingPermissions}
+                          className="sr-only"
+                        />
+                        <div className={`w-11 h-6 rounded-full transition-colors ${
+                          userPermissions[user.id]?.permissions?.includes('manage_orders') ? 'bg-indigo-500' : 'bg-slate-300'
+                        } ${isSavingPermissions ? 'opacity-50' : ''}`}>
+                          <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform transform ${
+                            userPermissions[user.id]?.permissions?.includes('manage_orders') ? 'translate-x-6' : 'translate-x-0.5'
+                          } mt-0.5`}></div>
+                        </div>
+                      </label>
 
-                {isAdmin && user.id !== currentUser?.id && (
-                  <button
-                    onClick={() => handleDeleteUser(user.id)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    title="Remove member"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                  </button>
-                )}
-              </div>
+                      <div className="pt-2 border-t border-slate-200">
+                        <p className="text-xs text-slate-600 italic">
+                          Changes take effect immediately
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

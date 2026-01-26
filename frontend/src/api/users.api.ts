@@ -192,6 +192,19 @@ export const usersAPI = {
     );
     return response.data;
   },
+
+  /**
+   * Admin reset user password (admin only, no current password required)
+   */
+  async resetPassword(userId: number, newPassword: string): Promise<{
+    message: string;
+  }> {
+    const response = await apiClient.put<{ message: string }>(
+      `/users/${userId}/reset-password`,
+      { newPassword }
+    );
+    return response.data;
+  },
 };
 
 export default usersAPI;

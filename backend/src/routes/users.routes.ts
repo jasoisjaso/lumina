@@ -729,4 +729,79 @@ router.put('/:id/permissions', requireAdmin, async (req: AuthRequest, res: Respo
   }
 });
 
+/**
+ * PUT /api/v1/users/:id/reset-password
+ * Admin password reset (admin only, no current password required)
+ */
+router.put('/:id/reset-password', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
+      return;
+    }
+
+    const userId = parseInt(req.params.id);
+    const { newPassword } = req.body;
+
+    if (isNaN(userId)) {
+      res.status(400).json({ error: 'Validation Error', message: 'Invalid user ID' });
+      return;
+    }
+
+    // Can't reset own password this way (must use regular password change)
+    if (userId === req.user.userId) {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: 'Cannot reset your own password. Use the change password feature instead.'
+      });
+      return;
+    }
+
+    // Validate new password
+    if (!newPassword) {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: 'New password is required'
+      });
+      return;
+    }
+
+    // Get target user
+    const targetUser = await authService.getUserById(userId);
+    if (!targetUser) {
+      res.status(404).json({ error: 'Not Found', message: 'User not found' });
+      return;
+    }
+
+    // Admins can only reset passwords for users in their family
+    if (targetUser.family_id !== req.user.familyId) {
+      res.status(403).json({
+        error: 'Forbidden',
+        message: 'You can only reset passwords for users in your own family'
+      });
+      return;
+    }
+
+    // Validate password strength using auth service validation
+    const passwordHash = await authService.hashPassword(newPassword);
+
+    // Update password directly
+    await db('users').where({ id: userId }).update({
+      password_hash: passwordHash,
+      updated_at: new Date(),
+    });
+
+    // Revoke all existing refresh tokens for security
+    await authService.revokeAllUserTokens(userId);
+
+    res.status(200).json({ message: 'Password reset successfully' });
+  } catch (error: any) {
+    console.error('Admin password reset error:', error);
+    res.status(400).json({
+      error: 'Password Reset Failed',
+      message: error.message || 'Failed to reset password',
+    });
+  }
+});
+
 export default router;
