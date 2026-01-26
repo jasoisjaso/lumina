@@ -1,0 +1,14 @@
+# Ignore all database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignore all log files
+*.log
+
+# Ignore uploads and cache
+uploads/
+cache/
+
+# Keep the directory structure
+!.gitkeep

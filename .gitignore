@@ -25,17 +25,18 @@ dist/
 *.db
 *.sqlite
 *.sqlite3
-backend/data/*.db
-backend/data/*.sqlite
+
+# Backend data - ignore everything except .gitkeep and .gitignore
+backend/data/*
+!backend/data/.gitkeep
+!backend/data/.gitignore
 
 # Uploads and cache
-backend/data/uploads/
-backend/data/cache/
 uploads/
 cache/
 
-# Docker volumes
-data/
+# Docker volumes (root level only)
+/data/
 redis_data/
 
 # IDE and editors
