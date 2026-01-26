@@ -45,6 +45,12 @@ if [[ "$FRESH_INSTALL" == true ]]; then
     echo ""
 fi
 
+# Fix permissions for Docker container (backend runs as UID 1001)
+echo "🔧 Setting correct permissions..."
+docker run --rm -v "$(pwd)/backend/data:/data" alpine sh -c "chown -R 1001:1001 /data && chmod -R 755 /data"
+echo "✅ Permissions fixed"
+echo ""
+
 # Pull latest images
 echo "📥 Pulling latest Docker images from GitHub Container Registry..."
 docker compose -f docker-compose.ghcr.yml pull
@@ -56,7 +62,24 @@ docker compose -f docker-compose.ghcr.yml up -d
 # Wait for backend to be healthy
 echo ""
 echo "⏳ Waiting for backend to be ready..."
-sleep 10
+MAX_RETRIES=30
+RETRY_COUNT=0
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if curl -s http://localhost:3001/health > /dev/null 2>&1; then
+        echo "✅ Backend is ready!"
+        break
+    fi
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    echo "   Attempt $RETRY_COUNT/$MAX_RETRIES..."
+    sleep 2
+done
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+    echo "❌ Backend failed to start. Check logs:"
+    echo "   docker compose -f docker-compose.ghcr.yml logs backend"
+    exit 1
+fi
+echo ""
 
 # Check if setup is needed
 SETUP_STATUS=$(curl -s http://localhost:3001/api/v1/setup/status || echo '{"setupNeeded":true}')
