@@ -4,6 +4,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+# Set NODE_ENV to production for proper API URL handling
+ENV NODE_ENV=production
 RUN npm run build
 
 # Stage 2: Serve the application with Nginx

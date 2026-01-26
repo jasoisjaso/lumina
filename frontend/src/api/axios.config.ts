@@ -6,7 +6,10 @@ import { useAuthStore } from '../stores/auth.store';
  * Configured with base URL and JWT token interceptors
  */
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api/v1';
+// Use relative URL in production so nginx can proxy it
+// Use localhost:3001 in development
+const API_BASE_URL = process.env.REACT_APP_API_URL ||
+  (process.env.NODE_ENV === 'production' ? '/api/v1' : 'http://localhost:3001/api/v1');
 
 // Create axios instance
 const apiClient = axios.create({
