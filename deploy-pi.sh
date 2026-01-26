@@ -28,18 +28,15 @@ fi
 echo "🛑 Stopping existing containers..."
 docker compose -f docker-compose.ghcr.yml down
 
+# Create data directory if it doesn't exist
+mkdir -p backend/data
+
 # Clean database if fresh install
 if [[ "$FRESH_INSTALL" == true ]]; then
     echo "🧹 Cleaning database and data files..."
 
-    # Create data directory if it doesn't exist
-    mkdir -p backend/data
-
     # Clean using Docker (no sudo needed)
     docker run --rm -v "$(pwd)/backend/data:/data" alpine sh -c "rm -rf /data/*.db /data/*.sqlite* /data/*.log /data/uploads" || true
-
-    # Verify .gitkeep exists
-    touch backend/data/.gitkeep
 
     echo "✅ Database cleaned"
     echo ""
@@ -47,7 +44,13 @@ fi
 
 # Fix permissions for Docker container (backend runs as UID 1001)
 echo "🔧 Setting correct permissions..."
-docker run --rm -v "$(pwd)/backend/data:/data" alpine sh -c "chown -R 1001:1001 /data && chmod -R 755 /data"
+# Set ownership to 1001:1001 (nodejs user), create .gitkeep, and set proper permissions
+docker run --rm -v "$(pwd)/backend/data:/data" alpine sh -c "
+    chown -R 1001:1001 /data
+    chmod -R 755 /data
+    touch /data/.gitkeep
+    chown 1001:1001 /data/.gitkeep
+"
 echo "✅ Permissions fixed"
 echo ""
 
