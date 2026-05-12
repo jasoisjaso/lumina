@@ -47,7 +47,7 @@ echo "🔧 Setting correct permissions..."
 # Set ownership to 1001:1001 (nodejs user), create .gitkeep, and set proper permissions
 docker run --rm -v "$(pwd)/backend/data:/data" alpine sh -c "
     chown -R 1001:1001 /data
-    chmod -R 755 /data
+    chmod -R 700 /data
     touch /data/.gitkeep
     chown 1001:1001 /data/.gitkeep
 "

@@ -8,7 +8,7 @@ import axios from 'axios';
 
 // Use relative URL in production so nginx can proxy it
 // Use localhost:3001 in development
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL ||
+const API_BASE_URL = process.env.REACT_APP_API_URL ||
   (process.env.NODE_ENV === 'production' ? '/api/v1' : 'http://localhost:3001/api/v1');
 
 const setupClient = axios.create({
