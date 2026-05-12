@@ -782,7 +782,13 @@ router.put('/:id/reset-password', requireAdmin, async (req: AuthRequest, res: Re
       return;
     }
 
-    // Validate password strength using auth service validation
+    // Validate password strength
+    const passwordValidation = authService.validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      res.status(400).json({ error: 'Validation Error', message: passwordValidation.error });
+      return;
+    }
+
     const passwordHash = await authService.hashPassword(newPassword);
 
     // Update password directly

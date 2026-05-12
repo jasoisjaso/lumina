@@ -60,7 +60,7 @@ class AuthService {
    * - At least one lowercase letter
    * - At least one number
    */
-  private validatePassword(password: string): { valid: boolean; error?: string } {
+  validatePassword(password: string): { valid: boolean; error?: string } {
     if (password.length < 8) {
       return { valid: false, error: 'Password must be at least 8 characters long' };
     }
