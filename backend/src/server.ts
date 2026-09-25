@@ -146,6 +146,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 import { runMigrations } from './database/runMigrations';
+import db from './database/knex';
+import type { Server } from 'http';
+
+let httpServer: Server | undefined;
 
 // Connect to Redis and start server
 async function startServer() {
@@ -156,7 +160,7 @@ async function startServer() {
     await redisClient.connect();
     console.log('Connected to Redis');
 
-    app.listen(port, () => {
+    httpServer = app.listen(port, () => {
       console.log(`Lumina backend server running on port ${port}`);
     });
 
@@ -173,19 +177,40 @@ async function startServer() {
   }
 }
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully...');
-  syncOrdersJob.stop();
-  syncCalendarsJob.stop();
-  process.exit(0);
-});
+// Graceful shutdown: stop accepting requests, then close the database so
+// SQLite checkpoints its WAL into lumina.db (keeps file-copy backups complete).
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received, shutting down gracefully...`);
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully...');
+  // Docker sends SIGKILL after 10s; exit on our own before that
+  setTimeout(() => {
+    console.warn('Graceful shutdown timed out, forcing exit');
+    process.exit(1);
+  }, 8000).unref();
+
   syncOrdersJob.stop();
   syncCalendarsJob.stop();
+
+  try {
+    if (httpServer) {
+      const closed = new Promise<void>((resolve) => httpServer!.close(() => resolve()));
+      httpServer.closeIdleConnections(); // don't wait on idle keep-alive sockets
+      await closed;
+    }
+    await db.destroy();
+    if (redisClient.isOpen) {
+      await redisClient.quit();
+    }
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+  }
   process.exit(0);
-});
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
 
 startServer();
