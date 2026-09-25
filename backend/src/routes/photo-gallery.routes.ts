@@ -458,8 +458,9 @@ router.get('/serve/:familyId/:type/:filename', authenticate, async (req: AuthReq
     const { familyId, type, filename } = req.params;
     const userFamilyId = req.user?.familyId;
 
-    // Security: Ensure user can only access their own family's photos
-    if (parseInt(familyId) !== userFamilyId) {
+    // Security: Ensure user can only access their own family's photos.
+    // Require a plain integer so values like "1%2F..%2F2" can't pass parseInt.
+    if (!/^\d+$/.test(familyId) || Number(familyId) !== userFamilyId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -471,12 +472,11 @@ router.get('/serve/:familyId/:type/:filename', authenticate, async (req: AuthReq
 
     // Build file path
     const uploadsDir = path.join(process.cwd(), 'data', 'uploads', 'photos');
-    const filePath = path.join(uploadsDir, familyId, type, filename);
+    const expectedBase = path.join(uploadsDir, String(userFamilyId), type);
+    const filePath = path.resolve(expectedBase, filename);
 
     // Security: Prevent directory traversal
-    const normalizedPath = path.normalize(filePath);
-    const expectedBase = path.join(uploadsDir, familyId, type);
-    if (!normalizedPath.startsWith(expectedBase)) {
+    if (filename !== path.basename(filename) || !filePath.startsWith(expectedBase + path.sep)) {
       return res.status(403).json({ error: 'Invalid file path' });
     }
 
@@ -499,7 +499,7 @@ router.get('/serve/:familyId/:type/:filename', authenticate, async (req: AuthReq
     const contentType = contentTypeMap[ext] || 'application/octet-stream';
 
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+    res.setHeader('Cache-Control', 'private, max-age=31536000'); // Browser-only cache for 1 year
     res.sendFile(filePath);
   } catch (error: any) {
     console.error('Serve photo error:', error);
