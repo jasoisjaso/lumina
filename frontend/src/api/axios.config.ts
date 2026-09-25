@@ -22,17 +22,30 @@ const apiClient = axios.create({
 
 // Flag to prevent multiple refresh attempts
 let isRefreshing = false;
-let refreshSubscribers: ((token: string) => void)[] = [];
+let refreshSubscribers: { resolve: (token: string) => void; reject: (error: unknown) => void }[] = [];
 
 // Add subscriber to wait for token refresh
-const subscribeTokenRefresh = (callback: (token: string) => void) => {
-  refreshSubscribers.push(callback);
+const subscribeTokenRefresh = (resolve: (token: string) => void, reject: (error: unknown) => void) => {
+  refreshSubscribers.push({ resolve, reject });
 };
 
 // Notify all subscribers when token is refreshed
 const onTokenRefreshed = (token: string) => {
-  refreshSubscribers.forEach((callback) => callback(token));
+  refreshSubscribers.forEach(({ resolve }) => resolve(token));
   refreshSubscribers = [];
+};
+
+// Fail all waiting requests when the refresh fails, so none hang forever
+const onTokenRefreshFailed = (error: unknown) => {
+  refreshSubscribers.forEach(({ reject }) => reject(error));
+  refreshSubscribers = [];
+};
+
+// Send the user back to the app root, which shows the login screen
+const redirectToLogin = () => {
+  if (window.location.pathname !== '/') {
+    window.location.href = '/';
+  }
 };
 
 // Request interceptor - Add JWT token to requests
@@ -59,17 +72,20 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
 
+    // A 401 from login/refresh/logout is a real answer (e.g. wrong password), not an expired token
+    const isAuthRequest = ['/auth/login', '/auth/refresh', '/auth/logout'].includes(originalRequest.url ?? '');
+
     // If error is 401 and we haven't retried yet, try to refresh token
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthRequest) {
       if (isRefreshing) {
         // Wait for token refresh to complete
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           subscribeTokenRefresh((token: string) => {
             if (originalRequest.headers) {
               originalRequest.headers.Authorization = `Bearer ${token}`;
             }
             resolve(apiClient(originalRequest));
-          });
+          }, reject);
         });
       }
 
@@ -79,8 +95,10 @@ apiClient.interceptors.response.use(
       const { refreshToken, updateAccessToken, clearAuth } = useAuthStore.getState();
 
       if (!refreshToken) {
+        isRefreshing = false;
+        onTokenRefreshFailed(error);
         clearAuth();
-        window.location.href = '/login';
+        redirectToLogin();
         return Promise.reject(error);
       }
 
@@ -112,8 +130,9 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         // Refresh failed, clear auth and redirect to login
         isRefreshing = false;
+        onTokenRefreshFailed(refreshError);
         clearAuth();
-        window.location.href = '/login';
+        redirectToLogin();
         return Promise.reject(refreshError);
       }
     }
