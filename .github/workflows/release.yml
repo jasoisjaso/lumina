@@ -15,73 +15,34 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Generate changelog
-        id: changelog
+      # Use this version's section of CHANGELOG.md as the release notes
+      - name: Extract release notes
         run: |
-          # Get the previous tag
-          PREVIOUS_TAG=$(git tag --sort=-creatordate | sed -n '2p')
-          if [ -z "$PREVIOUS_TAG" ]; then
-            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v version="$VERSION" '
+            $0 ~ "^## \\[" version "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found && /^\[[0-9.]+\]: / { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No CHANGELOG.md section found for $VERSION"
+            exit 1
           fi
-          
-          # Generate changelog
-          echo "## What's Changed" > changelog.md
-          echo "" >> changelog.md
-          git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges >> changelog.md
-          
-          # Set output
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          cat changelog.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          cat >> release-notes.md <<EOF
 
-      - name: Create Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ## Docker images
+
+          \`\`\`bash
+          docker pull ghcr.io/${GITHUB_REPOSITORY}-backend:${VERSION}
+          docker pull ghcr.io/${GITHUB_REPOSITORY}-frontend:${VERSION}
+          \`\`\`
+          EOF
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Lumina ${{ github.ref_name }}
-          body: |
-            # Lumina ${{ github.ref_name }}
-            
-            ${{ steps.changelog.outputs.changelog }}
-            
-            ## Installation
-            
-            ```bash
-            git clone -b ${{ github.ref_name }} https://github.com/${{ github.repository }}.git
-            cd lumina
-            docker compose up -d
-            ```
-            
-            ## Docker Images
-            
-            Multi-platform images (AMD64 and ARM64) are available:
-            
-            ```bash
-            docker pull ghcr.io/${{ github.repository }}-backend:${{ github.ref_name }}
-            docker pull ghcr.io/${{ github.repository }}-frontend:${{ github.ref_name }}
-            ```
-            
-            ## Documentation
-            
-            - [Quick Start Guide](docs/README.md)
-            - [Deployment Guide](docs/DEPLOYMENT.md)
-            - [Troubleshooting](docs/TROUBLESHOOTING.md)
-          draft: false
+          name: Lumina ${{ github.ref_name }}
+          body_path: release-notes.md
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
-
-  notify-release:
-    name: Notify Release
-    needs: create-release
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Release notification
-        run: |
-          echo "✅ Release ${{ github.ref_name }} created successfully!"
-          echo "📦 Docker images published to GitHub Container Registry"
-          echo "📝 Release notes available at https://github.com/${{ github.repository }}/releases"
