@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../database/knex';
 import { config } from '../config';
+import { stripHtml } from '../middleware/sanitize.middleware';
 
 const UPDATABLE_USER_FIELDS = ['first_name', 'last_name', 'email', 'color'] as const;
 type UpdatableUserField = (typeof UPDATABLE_USER_FIELDS)[number];
@@ -235,7 +236,20 @@ class AuthService {
     }
 
     // Verify password
-    const isPasswordValid = await this.comparePassword(password, user.password_hash);
+    let isPasswordValid = await this.comparePassword(password, user.password_hash);
+
+    // Passwords used to be HTML-sanitized before hashing, which altered any
+    // containing <, > or &. Accept the old form once and re-hash the real one.
+    if (!isPasswordValid) {
+      const legacyPassword = stripHtml(password);
+      if (legacyPassword !== password && (await this.comparePassword(legacyPassword, user.password_hash))) {
+        isPasswordValid = true;
+        await db('users')
+          .where({ id: user.id })
+          .update({ password_hash: await this.hashPassword(password), updated_at: new Date() });
+      }
+    }
+
     if (!isPasswordValid) {
       throw new Error('Invalid email or password');
     }

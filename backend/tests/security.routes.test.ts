@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import authRoutes from '../src/routes/auth.routes';
 import photoRoutes from '../src/routes/photo-gallery.routes';
 import settingsRoutes from '../src/routes/settings.routes';
+import { stripHtml } from '../src/middleware/sanitize.middleware';
+import authService from '../src/services/auth.service';
 import { settingsService } from '../src/services/settings.service';
 import { createFamily, createUser, db, migrate, tokenFor } from './helpers';
 
@@ -138,5 +140,35 @@ describe('GET /photos/serve', () => {
     const res = await request(app).get(url).set('Authorization', `Bearer ${memberToken}`);
 
     expect(res.status).toBe(403);
+  });
+});
+
+describe('passwords with HTML characters', () => {
+  const password = 'Pass<b>word1&x';
+
+  it('are stored and checked exactly as typed', async () => {
+    const created = await request(app)
+      .post('/auth/register')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'special@example.com', password, first_name: 'Special', last_name: 'Chars' });
+    expect(created.status).toBe(201);
+
+    const login = await request(app).post('/auth/login').send({ email: 'special@example.com', password });
+    expect(login.status).toBe(200);
+    const wrong = await request(app).post('/auth/login').send({ email: 'special@example.com', password: stripHtml(password) });
+    expect(wrong.status).toBe(401);
+  });
+
+  it('still log in when the stored hash is of the old sanitized form, then re-hash', async () => {
+    const legacyHash = await authService.hashPassword(stripHtml(password));
+    await createUser(familyA, 'legacy@example.com', 'member', 'unused');
+    await db('users').where({ email: 'legacy@example.com' }).update({ password_hash: legacyHash });
+
+    const login = await request(app).post('/auth/login').send({ email: 'legacy@example.com', password });
+
+    expect(login.status).toBe(200);
+    const user = await db('users').where({ email: 'legacy@example.com' }).first();
+    expect(user.password_hash).not.toBe(legacyHash);
+    expect(await authService.comparePassword(password, user.password_hash)).toBe(true);
   });
 });
