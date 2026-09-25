@@ -2,10 +2,14 @@ import { Router, Response } from 'express';
 import { authenticate, AuthRequest, requireAdmin, requirePermission } from '../middleware/auth.middleware';
 import { sanitizeInput } from '../middleware/sanitize.middleware';
 import { PermissionName } from '../types/permissions';
-import workflowService from '../services/workflow.service';
+import workflowService, { StageUpdateResult } from '../services/workflow.service';
 import wooCommerceService from '../services/woocommerce.service';
 
 const router = Router();
+
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof Error && (error.message === 'Order not found' || error.message === 'Stage not found');
+}
 
 /**
  * GET /api/v1/workflow/board
@@ -83,6 +87,7 @@ router.get('/filters/options', authenticate, async (req: AuthRequest, res: Respo
 router.put('/stages/:id/visibility', authenticate, requireAdmin, sanitizeInput, async (req: AuthRequest, res: Response) => {
   try {
     const stageId = parseInt(req.params.id);
+    const familyId = req.user!.familyId;
     const { is_hidden } = req.body;
 
     if (typeof is_hidden !== 'boolean') {
@@ -92,7 +97,7 @@ router.put('/stages/:id/visibility', authenticate, requireAdmin, sanitizeInput, 
       });
     }
 
-    await workflowService.updateStageVisibility(stageId, is_hidden);
+    await workflowService.updateStageVisibility(stageId, is_hidden, familyId);
 
     res.json({
       message: `Stage visibility updated to ${is_hidden ? 'hidden' : 'visible'}`,
@@ -131,6 +136,9 @@ router.put('/stages', authenticate, requireAdmin, sanitizeInput, async (req: Aut
     });
   } catch (error: any) {
     console.error('Update workflow stages error:', error);
+    if (error instanceof Error && error.message.startsWith('Cannot remove a stage')) {
+      return res.status(409).json({ error: 'Conflict', message: error.message });
+    }
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Failed to update workflow stages',
@@ -150,12 +158,15 @@ router.put('/orders/:id', authenticate, requirePermission(PermissionName.MANAGE_
     const familyId = req.user!.familyId;
     const { stage_id, assigned_to, priority, notes } = req.body;
 
+    let syncResult: StageUpdateResult | undefined;
+
     // If stage is being updated, use bi-directional sync method
     if (stage_id !== undefined) {
-      await workflowService.updateOrderStageWithWooCommerceSync(
+      syncResult = await workflowService.updateOrderStageWithWooCommerceSync(
         orderId,
         stage_id,
         userId,
+        familyId,
         wooCommerceService
       );
 
@@ -166,7 +177,7 @@ router.put('/orders/:id', authenticate, requirePermission(PermissionName.MANAGE_
         if (priority !== undefined) otherUpdates.priority = priority;
         if (notes !== undefined) otherUpdates.notes = notes;
 
-        await workflowService.updateOrder(orderId, otherUpdates, userId);
+        await workflowService.updateOrder(orderId, otherUpdates, userId, familyId);
       }
     } else {
       // No stage change, just update other fields
@@ -175,13 +186,13 @@ router.put('/orders/:id', authenticate, requirePermission(PermissionName.MANAGE_
       if (priority !== undefined) updates.priority = priority;
       if (notes !== undefined) updates.notes = notes;
 
-      await workflowService.updateOrder(orderId, updates, userId);
+      await workflowService.updateOrder(orderId, updates, userId, familyId);
     }
 
-    res.json({ message: 'Order updated successfully' });
+    res.json({ message: 'Order updated successfully', ...syncResult });
   } catch (error: any) {
     console.error('Update order workflow error:', error);
-    res.status(500).json({
+    res.status(isNotFoundError(error) ? 404 : 500).json({
       error: 'Internal Server Error',
       message: error.message || 'Failed to update order',
     });
@@ -214,6 +225,7 @@ router.post('/bulk-update', authenticate, requirePermission(PermissionName.MANAG
             orderId,
             stage_id,
             userId,
+            familyId,
             wooCommerceService
           );
         } catch (error: any) {
@@ -229,7 +241,8 @@ router.post('/bulk-update', authenticate, requirePermission(PermissionName.MANAG
             assigned_to,
             priority,
           },
-          userId
+          userId,
+          familyId
         );
       }
     } else {
@@ -240,14 +253,15 @@ router.post('/bulk-update', authenticate, requirePermission(PermissionName.MANAG
           assigned_to,
           priority,
         },
-        userId
+        userId,
+        familyId
       );
     }
 
     res.json({ message: `${order_ids.length} orders updated successfully` });
   } catch (error: any) {
     console.error('Bulk update error:', error);
-    res.status(500).json({
+    res.status(isNotFoundError(error) ? 404 : 500).json({
       error: 'Internal Server Error',
       message: 'Failed to bulk update orders',
     });
@@ -261,7 +275,7 @@ router.post('/bulk-update', authenticate, requirePermission(PermissionName.MANAG
 router.get('/orders/:id/history', authenticate, sanitizeInput, async (req: AuthRequest, res: Response) => {
   try {
     const orderId = parseInt(req.params.id);
-    const history = await workflowService.getOrderHistory(orderId);
+    const history = await workflowService.getOrderHistory(orderId, req.user!.familyId);
     
     res.json({ data: history });
   } catch (error: any) {

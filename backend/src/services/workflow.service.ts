@@ -36,7 +36,36 @@ interface BulkUpdateRequest {
   priority?: number;
 }
 
+export interface StageUpdateResult {
+  wooCommerceSynced: boolean;
+  wooCommerceError?: string;
+}
+
 class WorkflowService {
+  /**
+   * Throw unless every order ID belongs to the given family
+   */
+  private async assertOrdersInFamily(orderIds: number[], familyId: number): Promise<void> {
+    const uniqueIds = [...new Set(orderIds)];
+    const result = await knex('cached_orders')
+      .whereIn('id', uniqueIds)
+      .andWhere({ family_id: familyId })
+      .count<{ count: number }[]>('id as count');
+    if (Number(result[0]?.count ?? 0) !== uniqueIds.length) {
+      throw new Error('Order not found');
+    }
+  }
+
+  /**
+   * Get a stage, throwing unless it belongs to the given family
+   */
+  private async getFamilyStage(stageId: number, familyId: number): Promise<WorkflowStage> {
+    const stage = await knex('order_workflow_stages').where({ id: stageId, family_id: familyId }).first();
+    if (!stage) {
+      throw new Error('Stage not found');
+    }
+    return stage;
+  }
   /**
    * Get all workflow stages for a family
    */
@@ -51,19 +80,40 @@ class WorkflowService {
    */
   async updateStages(familyId: number, stages: Partial<WorkflowStage>[]): Promise<WorkflowStage[]> {
     await knex.transaction(async (trx) => {
-      // Delete existing stages
-      await trx('order_workflow_stages').where({ family_id: familyId }).delete();
+      const existing: WorkflowStage[] = await trx('order_workflow_stages').where({ family_id: familyId });
+      const existingIds = new Set(existing.map((stage) => stage.id));
+      const keptIds = new Set<number>();
 
-      // Insert new stages
-      await trx('order_workflow_stages').insert(
-        stages.map((stage, index) => ({
-          family_id: familyId,
+      // Update stages in place (matched by id) so orders and history that
+      // reference them are preserved; insert any new ones.
+      for (const [index, stage] of stages.entries()) {
+        const values = {
           name: stage.name,
           color: stage.color || '#4F46E5',
           position: index,
-          wc_status: stage.wc_status,
-        }))
-      );
+          wc_status: stage.wc_status ?? null,
+        };
+
+        if (stage.id !== undefined && existingIds.has(stage.id)) {
+          keptIds.add(stage.id);
+          await trx('order_workflow_stages')
+            .where({ id: stage.id, family_id: familyId })
+            .update({ ...values, updated_at: trx.fn.now() });
+        } else {
+          await trx('order_workflow_stages').insert({ ...values, family_id: familyId });
+        }
+      }
+
+      // Only stages the caller removed are deleted. Refuse if orders are
+      // still in them, since the foreign key would cascade-delete those orders.
+      const removedIds = existing.filter((stage) => !keptIds.has(stage.id)).map((stage) => stage.id);
+      if (removedIds.length > 0) {
+        const inUse = await trx('order_workflow').whereIn('stage_id', removedIds).first();
+        if (inUse) {
+          throw new Error('Cannot remove a stage that still contains orders; move them first');
+        }
+        await trx('order_workflow_stages').whereIn('id', removedIds).delete();
+      }
     });
 
     return this.getStages(familyId);
@@ -163,8 +213,14 @@ class WorkflowService {
       priority?: number;
       notes?: string;
     },
-    changedBy: number
+    changedBy: number,
+    familyId: number
   ): Promise<void> {
+    await this.assertOrdersInFamily([orderId], familyId);
+    if (updates.stage_id !== undefined) {
+      await this.getFamilyStage(updates.stage_id, familyId);
+    }
+
     await knex.transaction(async (trx) => {
       // Get current workflow state
       const current = await trx('order_workflow').where({ order_id: orderId }).first();
@@ -224,7 +280,12 @@ class WorkflowService {
    * Bulk update orders
    * Optimized to use batch operations instead of individual queries
    */
-  async bulkUpdate(request: BulkUpdateRequest, changedBy: number): Promise<void> {
+  async bulkUpdate(request: BulkUpdateRequest, changedBy: number, familyId: number): Promise<void> {
+    await this.assertOrdersInFamily(request.order_ids, familyId);
+    if (request.stage_id !== undefined) {
+      await this.getFamilyStage(request.stage_id, familyId);
+    }
+
     await knex.transaction(async (trx) => {
       // 1. Fetch all current states in one query
       const currentStates = await trx('order_workflow')
@@ -264,18 +325,20 @@ class WorkflowService {
   /**
    * Get order history
    */
-  async getOrderHistory(orderId: number): Promise<any[]> {
+  async getOrderHistory(orderId: number, familyId: number): Promise<any[]> {
     return knex('order_workflow_history as owh')
+      .join('cached_orders as co', 'owh.order_id', 'co.id')
       .leftJoin('order_workflow_stages as from_stage', 'owh.from_stage_id', 'from_stage.id')
       .join('order_workflow_stages as to_stage', 'owh.to_stage_id', 'to_stage.id')
       .join('users as u', 'owh.changed_by', 'u.id')
       .where('owh.order_id', orderId)
+      .andWhere('co.family_id', familyId)
       .orderBy('owh.changed_at', 'desc')
       .select(
         'owh.*',
         'from_stage.name as from_stage_name',
         'to_stage.name as to_stage_name',
-        knex.raw('u.first_name || " " || u.last_name as changed_by_name')
+        knex.raw("u.first_name || ' ' || u.last_name as changed_by_name")
       );
   }
 
@@ -417,37 +480,43 @@ class WorkflowService {
     orderId: number,
     stageId: number,
     changedBy: number,
-    wooCommerceService?: any
-  ): Promise<void> {
-    // Get the new stage details
-    const newStage = await knex('order_workflow_stages').where({ id: stageId }).first();
-
-    if (!newStage) {
-      throw new Error('Stage not found');
+    familyId: number,
+    wooCommerceService?: {
+      updateOrderStatus(familyId: number, orderId: number, status: string): Promise<unknown>;
     }
+  ): Promise<StageUpdateResult> {
+    const newStage = await this.getFamilyStage(stageId, familyId);
 
     // Get the cached order to find WooCommerce order ID
-    const cachedOrder = await knex('cached_orders').where({ id: orderId }).first();
+    const cachedOrder = await knex('cached_orders').where({ id: orderId, family_id: familyId }).first();
 
     if (!cachedOrder) {
       throw new Error('Order not found');
     }
 
     // Update local workflow first
-    await this.updateOrder(orderId, { stage_id: stageId }, changedBy);
+    await this.updateOrder(orderId, { stage_id: stageId }, changedBy, familyId);
 
     // If this stage maps to a WooCommerce status, update WooCommerce
-    if (newStage.wc_status && wooCommerceService) {
-      try {
-        await wooCommerceService.updateOrderStatus(
-          cachedOrder.family_id,
-          cachedOrder.wc_order_id,
-          newStage.wc_status
-        );
-      } catch (error) {
-        console.error(`Failed to sync order status to WooCommerce:`, error);
-        // Don't throw - we still want the local update to persist
-      }
+    if (!newStage.wc_status || !wooCommerceService || cachedOrder.status === newStage.wc_status) {
+      return { wooCommerceSynced: false };
+    }
+
+    try {
+      await wooCommerceService.updateOrderStatus(
+        familyId,
+        cachedOrder.woocommerce_order_id,
+        newStage.wc_status
+      );
+      await knex('cached_orders').where({ id: orderId }).update({ status: newStage.wc_status });
+      return { wooCommerceSynced: true };
+    } catch (error) {
+      // Keep the local update, but report the failure to the caller
+      console.error(`Failed to sync order status to WooCommerce:`, error);
+      return {
+        wooCommerceSynced: false,
+        wooCommerceError: error instanceof Error ? error.message : 'Failed to update WooCommerce',
+      };
     }
   }
 
@@ -498,24 +567,45 @@ class WorkflowService {
         stage_id: matchingStage.id,
         priority: 0,
       });
-    } else if (workflowEntry.stage_id !== matchingStage.id) {
-      // Update stage if it changed
-      await knex('order_workflow')
+      return;
+    }
+
+    if (workflowEntry.stage_id === matchingStage.id) {
+      return;
+    }
+
+    // Several stages can share one WooCommerce status (e.g. "Making" and
+    // "Packed" are both "processing"). Leave the order where it is if its
+    // current stage already maps to this status.
+    const currentStage = await knex('order_workflow_stages').where({ id: workflowEntry.stage_id }).first();
+    if (currentStage?.wc_status === wcStatus) {
+      return;
+    }
+
+    // History needs a real user; attribute sync changes to the family's first admin
+    const systemUser = await knex('users')
+      .where({ family_id: familyId, role: 'admin' })
+      .orderBy('id', 'asc')
+      .first('id');
+
+    await knex.transaction(async (trx) => {
+      await trx('order_workflow')
         .where({ order_id: orderId })
         .update({
           stage_id: matchingStage.id,
-          last_updated: knex.fn.now(),
+          last_updated: trx.fn.now(),
         });
 
-      // Record history
-      await knex('order_workflow_history').insert({
-        order_id: orderId,
-        from_stage_id: workflowEntry.stage_id,
-        to_stage_id: matchingStage.id,
-        changed_by: 1, // System user
-        notes: 'Synced from WooCommerce',
-      });
-    }
+      if (systemUser) {
+        await trx('order_workflow_history').insert({
+          order_id: orderId,
+          from_stage_id: workflowEntry.stage_id,
+          to_stage_id: matchingStage.id,
+          changed_by: systemUser.id,
+          notes: 'Synced from WooCommerce',
+        });
+      }
+    });
   }
 
   /**
@@ -720,9 +810,9 @@ class WorkflowService {
   /**
    * Update stage visibility (show/hide column)
    */
-  async updateStageVisibility(stageId: number, isHidden: boolean): Promise<void> {
+  async updateStageVisibility(stageId: number, isHidden: boolean, familyId: number): Promise<void> {
     await knex('order_workflow_stages')
-      .where({ id: stageId })
+      .where({ id: stageId, family_id: familyId })
       .update({
         is_hidden: isHidden,
         updated_at: knex.fn.now(),
