@@ -172,3 +172,37 @@ describe('passwords with HTML characters', () => {
     expect(await authService.comparePassword(password, user.password_hash)).toBe(true);
   });
 });
+
+describe('tokens', () => {
+
+  it('rejects a refresh token used as an access token', async () => {
+    const { refreshToken } = await authService.loginUser('member@example.com', 'Password123').then((r) => r.tokens);
+
+    const res = await request(app).get('/auth/me').set('Authorization', `Bearer ${refreshToken}`);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects an access token used as a refresh token', async () => {
+    const res = await request(app).post('/auth/refresh').send({ refreshToken: memberToken });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('applies role changes and disabled accounts immediately', async () => {
+    const email = 'demoted@example.com';
+    const id = await createUser(familyA, email, 'admin');
+    const { accessToken, refreshToken } = await authService.loginUser(email, 'Password123').then((r) => r.tokens);
+
+    await db('users').where({ id }).update({ role: 'member' });
+    const register = await request(app)
+      .post('/auth/register')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ email: 'x@example.com', password: 'Password123', first_name: 'X', last_name: 'Y' });
+    expect(register.status).toBe(403);
+
+    await db('users').where({ id }).update({ status: 'disabled' });
+    expect((await request(app).get('/auth/me').set('Authorization', `Bearer ${accessToken}`)).status).toBe(401);
+    expect((await request(app).post('/auth/refresh').send({ refreshToken })).status).toBe(401);
+  });
+});

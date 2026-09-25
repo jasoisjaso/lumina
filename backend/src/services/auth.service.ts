@@ -21,6 +21,7 @@ export interface User {
   last_name: string;
   role: 'admin' | 'member';
   color: string | null;
+  status?: 'active' | 'invited' | 'disabled';
   created_at: Date;
   updated_at: Date;
 }
@@ -40,6 +41,7 @@ export interface TokenPayload {
   email: string;
   familyId: number;
   role: string;
+  tokenType?: 'access' | 'refresh';
 }
 
 export interface AuthTokens {
@@ -95,7 +97,7 @@ class AuthService {
    * Generate JWT access token
    */
   generateAccessToken(payload: TokenPayload): string {
-    return jwt.sign(payload, config.jwtSecret, {
+    return jwt.sign(this.claims(payload, 'access'), config.jwtSecret, {
       expiresIn: this.ACCESS_TOKEN_EXPIRY,
     });
   }
@@ -104,9 +106,44 @@ class AuthService {
    * Generate JWT refresh token
    */
   generateRefreshToken(payload: TokenPayload): string {
-    return jwt.sign(payload, config.jwtSecret, {
+    return jwt.sign(this.claims(payload, 'refresh'), config.jwtSecret, {
       expiresIn: this.REFRESH_TOKEN_EXPIRY,
     });
+  }
+
+  private claims(payload: TokenPayload, tokenType: 'access' | 'refresh'): TokenPayload {
+    return {
+      userId: payload.userId,
+      email: payload.email,
+      familyId: payload.familyId,
+      role: payload.role,
+      tokenType,
+    };
+  }
+
+  /**
+   * Load the current state of an active user for a token payload. Role and
+   * family come from the database so demotions and disabled accounts apply
+   * immediately instead of when the token expires.
+   */
+  private async activeUserPayload(payload: TokenPayload): Promise<TokenPayload> {
+    const user = await this.getUserById(payload.userId);
+    if (!user || (user.status && user.status !== 'active')) {
+      throw new Error('Invalid or expired token');
+    }
+    return { userId: user.id, email: user.email, familyId: user.family_id, role: user.role };
+  }
+
+  /**
+   * Verify an access token (refresh tokens are rejected) and return the
+   * user's current details
+   */
+  async verifyAccessToken(token: string): Promise<TokenPayload> {
+    const payload = this.verifyToken(token);
+    if (payload.tokenType !== 'access') {
+      throw new Error('Invalid or expired token');
+    }
+    return this.activeUserPayload(payload);
   }
 
   /**
@@ -291,13 +328,12 @@ class AuthService {
       throw new Error('Invalid or expired refresh token');
     }
 
-    // Generate new access token
-    const accessToken = this.generateAccessToken({
-      userId: payload.userId,
-      email: payload.email,
-      familyId: payload.familyId,
-      role: payload.role,
-    });
+    if (payload.tokenType === 'access') {
+      throw new Error('Invalid or expired refresh token');
+    }
+
+    // Generate new access token from the user's current details
+    const accessToken = this.generateAccessToken(await this.activeUserPayload(payload));
 
     return {
       accessToken,
