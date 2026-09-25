@@ -25,13 +25,29 @@ TESTS_FAILED=0
 test_result() {
   if [ $1 -eq 0 ]; then
     echo -e "${GREEN}✓ PASS${NC}: $2"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     echo -e "${RED}✗ FAIL${NC}: $2"
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
   echo ""
 }
+
+# Registration is admin-only, so an existing admin account is required
+if [ -z "$ADMIN_EMAIL" ] || [ -z "$ADMIN_PASSWORD" ]; then
+  echo "Usage: ADMIN_EMAIL=... ADMIN_PASSWORD=... $0"
+  exit 1
+fi
+
+ADMIN_TOKEN=$(curl -s -X POST "$API_URL/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" \
+  | grep -o '"accessToken":"[^"]*"' | cut -d'"' -f4)
+
+if [ -z "$ADMIN_TOKEN" ]; then
+  echo -e "${RED}Could not log in as admin $ADMIN_EMAIL${NC}"
+  exit 1
+fi
 
 # Generate random email for testing
 RANDOM_EMAIL="test_$(date +%s)@example.com"
@@ -43,12 +59,12 @@ echo ""
 echo -e "${YELLOW}Test 1: User Registration${NC}"
 REGISTER_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/auth/register" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d "{
     \"email\":\"$RANDOM_EMAIL\",
-    \"password\":\"test123456\",
+    \"password\":\"Test123456\",
     \"first_name\":\"Test\",
-    \"last_name\":\"User\",
-    \"family_id\":1
+    \"last_name\":\"User\"
   }")
 
 HTTP_CODE=$(echo "$REGISTER_RESPONSE" | tail -n1)
@@ -66,7 +82,7 @@ fi
 echo -e "${YELLOW}Test 2: User Login${NC}"
 LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"$RANDOM_EMAIL\",\"password\":\"test123456\"}")
+  -d "{\"email\":\"$RANDOM_EMAIL\",\"password\":\"Test123456\"}")
 
 ACCESS_TOKEN=$(echo $LOGIN_RESPONSE | grep -o '"accessToken":"[^"]*"' | cut -d'"' -f4)
 REFRESH_TOKEN=$(echo $LOGIN_RESPONSE | grep -o '"refreshToken":"[^"]*"' | cut -d'"' -f4)

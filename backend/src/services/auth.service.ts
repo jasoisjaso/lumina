@@ -3,6 +3,9 @@ import jwt from 'jsonwebtoken';
 import db from '../database/knex';
 import { config } from '../config';
 
+const UPDATABLE_USER_FIELDS = ['first_name', 'last_name', 'email', 'color'] as const;
+type UpdatableUserField = (typeof UPDATABLE_USER_FIELDS)[number];
+
 /**
  * Authentication Service
  * Handles user registration, login, JWT token generation, and validation
@@ -309,8 +312,14 @@ class AuthService {
    * Update user profile
    */
   async updateUser(userId: number, updates: Partial<User>): Promise<User> {
-    // Remove sensitive fields that shouldn't be updated directly
-    const { id, password_hash, created_at, updated_at, ...allowedUpdates } = updates as any;
+    // Only profile fields may be changed here. Role, status, family and
+    // credentials have dedicated endpoints with their own checks.
+    const allowedUpdates: Partial<Pick<User, UpdatableUserField>> = {};
+    for (const field of UPDATABLE_USER_FIELDS) {
+      if (updates[field] !== undefined) {
+        (allowedUpdates as Record<string, unknown>)[field] = updates[field];
+      }
+    }
 
     await db('users').where({ id: userId }).update({
       ...allowedUpdates,
