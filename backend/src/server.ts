@@ -85,6 +85,12 @@ const redisClient = createClient({
   url: `redis://${config.redis.host}:${config.redis.port}`
 });
 
+// Without an error listener a dropped Redis connection crashes the process;
+// the client reconnects on its own.
+redisClient.on('error', (error) => {
+  console.error('Redis error:', error.message);
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
@@ -125,7 +131,10 @@ app.use('/api/v1/weather', weatherRoutes);
 app.use('/api/v1/icloud-calendar', icloudCalendarRoutes);
 app.use('/api/v1/photos', photoGalleryRoutes);
 app.use('/api/v1/workflow', workflowRoutes);
-app.use('/api/v1/debug', debugRoutes);
+// Debug endpoints expose order data and are only for local troubleshooting
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/api/v1/debug', debugRoutes);
+}
 app.use('/api/v1/features', featuresRoutes);
 
 // 404 handler

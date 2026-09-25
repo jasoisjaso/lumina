@@ -8,8 +8,15 @@ import { authenticate, AuthRequest, requireAdmin } from '../middleware/auth.midd
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticate);
+// All routes require authentication, except accepting an invitation
+// (the invited user has no account session yet)
+router.use((req, res, next) => {
+  if (req.method === 'POST' && req.path === '/accept-invitation') {
+    next();
+    return;
+  }
+  authenticate(req as AuthRequest, res, next);
+});
 
 /**
  * GET /api/v1/users/:id
@@ -450,11 +457,9 @@ router.post('/accept-invitation', async (req, res: Response): Promise<void> => {
     }
 
     // Validate password strength
-    if (password.length < 8) {
-      res.status(400).json({
-        error: 'Validation Error',
-        message: 'Password must be at least 8 characters long',
-      });
+    const passwordValidation = authService.validatePassword(password);
+    if (!passwordValidation.valid) {
+      res.status(400).json({ error: 'Validation Error', message: passwordValidation.error });
       return;
     }
 
@@ -692,6 +697,13 @@ router.put('/:id/permissions', requireAdmin, async (req: AuthRequest, res: Respo
 
     if (isNaN(userId)) {
       res.status(400).json({ error: 'Validation Error', message: 'Invalid user ID' });
+      return;
+    }
+
+    // Admins can only change permissions for users in their own family
+    const targetUser = await authService.getUserById(userId);
+    if (!targetUser || targetUser.family_id !== req.user.familyId) {
+      res.status(404).json({ error: 'Not Found', message: 'User not found' });
       return;
     }
 
