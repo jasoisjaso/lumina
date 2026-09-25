@@ -1,4 +1,4 @@
-FROM node:18-alpine AS build
+FROM node:22-alpine AS build
 
 # Install build tools required for native modules
 RUN apk add --no-cache python3 make g++ python3-dev py3-pip
@@ -8,8 +8,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies exactly as locked
+RUN npm ci
 
 # Copy TypeScript configs
 COPY tsconfig.json ./
@@ -25,8 +25,11 @@ RUN npx tsc --skipLibCheck && \
     ls -la dist/ && \
     test -f dist/server.js || (echo "ERROR: dist/server.js not found!" && exit 1)
 
+# Drop test tooling from the runtime image
+RUN npm prune --omit=dev
+
 # Production stage
-FROM node:18-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 

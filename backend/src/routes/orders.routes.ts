@@ -1,9 +1,13 @@
 import { Router, Response } from 'express';
 import woocommerceService from '../services/woocommerce.service';
-import { authenticate, AuthRequest, requireFamilyAccess } from '../middleware/auth.middleware';
+import { authenticate, AuthRequest, requireFamilyAccess, requirePermission } from '../middleware/auth.middleware';
 import { syncOrdersJob } from '../jobs/sync-orders.job';
+import { PermissionName } from '../types/permissions';
 
 const router = Router();
+
+// Families with a manual sync in progress, so repeated clicks don't overlap
+const manualSyncsInProgress = new Set<number>();
 
 // All routes require authentication
 router.use(authenticate);
@@ -103,7 +107,7 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
  * PUT /api/v1/orders/:id/status
  * Update order status (syncs to WooCommerce)
  */
-router.put('/:id/status', async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/:id/status', requirePermission(PermissionName.MANAGE_ORDERS), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
@@ -156,7 +160,7 @@ router.put('/:id/status', async (req: AuthRequest, res: Response): Promise<void>
  * POST /api/v1/orders/sync
  * Trigger a manual sync of orders from WooCommerce
  */
-router.post('/sync', async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/sync', requirePermission(PermissionName.SYNC_ORDERS), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
@@ -173,9 +177,18 @@ router.post('/sync', async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
+    const familyId = req.user.familyId;
+    if (syncOrdersJob.getStatus().syncing || manualSyncsInProgress.has(familyId)) {
+      res.status(409).json({ error: 'Conflict', message: 'Sync is already in progress' });
+      return;
+    }
+
     // Trigger sync for the user's family
     const daysBack = req.body.daysBack ? parseInt(req.body.daysBack) : 30;
-    const result = await woocommerceService.syncOrdersForFamily(req.user.familyId, daysBack);
+    manualSyncsInProgress.add(familyId);
+    const result = await woocommerceService
+      .syncOrdersForFamily(familyId, daysBack)
+      .finally(() => manualSyncsInProgress.delete(familyId));
 
     if (result.success) {
       res.status(200).json({

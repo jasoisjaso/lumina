@@ -9,6 +9,33 @@ import knex from '../database/knex';
 
 const router = express.Router();
 
+// Secret values inside settings documents, as [section, key] pairs.
+// Only admins (who manage integrations) receive these; members get them blanked.
+const SECRET_SETTING_FIELDS: Array<[string, string]> = [
+  ['woocommerce', 'consumerKey'],
+  ['woocommerce', 'consumerSecret'],
+  ['weather', 'apiKey'],
+  ['kioskMode', 'pin'],
+];
+
+function redactSecrets<T>(settings: T): T {
+  if (!settings || typeof settings !== 'object') {
+    return settings;
+  }
+  const copy = JSON.parse(JSON.stringify(settings)) as Record<string, Record<string, unknown> | undefined>;
+  for (const [section, key] of SECRET_SETTING_FIELDS) {
+    const value = copy[section];
+    if (value && typeof value === 'object' && value[key]) {
+      value[key] = '';
+    }
+  }
+  return copy as T;
+}
+
+function settingsForUser<T>(req: AuthRequest, settings: T): T {
+  return req.user?.role === 'admin' ? settings : redactSecrets(settings);
+}
+
 router.use(sanitizeInput);
 
 /**
@@ -39,7 +66,7 @@ router.get('/:type', authenticate, async (req: AuthRequest, res: Response) => {
 
     res.json({
       type,
-      settings,
+      settings: settingsForUser(req, settings),
     });
   } catch (error: any) {
     console.error('Get settings error:', error);
@@ -105,7 +132,11 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     const allSettings = await settingsService.getAllSettings(familyId);
 
     res.json({
-      settings: allSettings,
+      settings: {
+        integrations: settingsForUser(req, allSettings.integrations),
+        features: settingsForUser(req, allSettings.features),
+        calendar: settingsForUser(req, allSettings.calendar),
+      },
     });
   } catch (error: any) {
     console.error('Get all settings error:', error);

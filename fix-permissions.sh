@@ -10,7 +10,7 @@ mkdir -p backend/data
 
 # Fix permissions using Docker (no sudo needed)
 # Backend runs as UID 1001 (nodejs user)
-docker run --rm -v "$(pwd)/backend/data:/data" alpine sh -c "chown -R 1001:1001 /data && chmod -R 755 /data"
+docker run --rm -v "$(pwd)/backend/data:/data" alpine sh -c "chown -R 1001:1001 /data && chmod -R 700 /data"
 
 echo "✅ Permissions fixed!"
 echo ""

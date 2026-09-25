@@ -16,7 +16,12 @@ export const knexConfig: Knex.Config = {
   },
   pool: {
     afterCreate: (conn: any, cb: any) => {
-      conn.run('PRAGMA foreign_keys = ON', cb);
+      // WAL lets reads proceed during writes (background sync + API requests),
+      // and busy_timeout waits for locks instead of failing with SQLITE_BUSY.
+      conn.exec(
+        'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;',
+        cb
+      );
     },
   },
   useNullAsDefault: true,

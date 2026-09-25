@@ -42,8 +42,8 @@ export const authenticate = async (
     // Extract token
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
-    // Verify token
-    const payload = authService.verifyToken(token);
+    // Verify token and load the user's current role and family
+    const payload = await authService.verifyAccessToken(token);
 
     // Load user permissions
     const permissions = await permissionService.getUserPermissions(payload.userId);
@@ -136,7 +136,7 @@ export const optionalAuth = async (
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
-      const payload = authService.verifyToken(token);
+      const payload = await authService.verifyAccessToken(token);
       const permissions = await permissionService.getUserPermissions(payload.userId);
       req.user = {
         userId: payload.userId,

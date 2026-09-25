@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import authService from '../services/auth.service';
-import { authenticate, AuthRequest } from '../middleware/auth.middleware';
+import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.middleware';
 import { sanitizeInput } from '../middleware/sanitize.middleware';
 import { loginLimiter, refreshTokenLimiter, strictLimiter } from '../middleware/rateLimit.middleware';
 
@@ -8,17 +8,25 @@ const router = Router();
 
 /**
  * POST /api/v1/auth/register
- * Register a new user
+ * Register a new user in the calling admin's family (admin only)
  */
-router.post('/register', sanitizeInput, async (req: Request, res: Response): Promise<void> => {
+router.post('/register', authenticate, requireAdmin, sanitizeInput, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { email, password, first_name, last_name, family_id, role, color } = req.body;
+    const { email, password, first_name, last_name, role, color } = req.body;
 
     // Validate required fields
-    if (!email || !password || !first_name || !last_name || !family_id) {
+    if (!email || !password || !first_name || !last_name) {
       res.status(400).json({
         error: 'Validation Error',
-        message: 'Missing required fields: email, password, first_name, last_name, family_id',
+        message: 'Missing required fields: email, password, first_name, last_name',
+      });
+      return;
+    }
+
+    if (role !== undefined && role !== 'admin' && role !== 'member') {
+      res.status(400).json({
+        error: 'Validation Error',
+        message: "Role must be 'admin' or 'member'",
       });
       return;
     }
@@ -29,7 +37,7 @@ router.post('/register', sanitizeInput, async (req: Request, res: Response): Pro
       password,
       first_name,
       last_name,
-      family_id: parseInt(family_id),
+      family_id: req.user!.familyId,
       role: role || 'member',
       color: color || null,
     });
@@ -226,14 +234,8 @@ router.put('/me', authenticate, sanitizeInput, async (req: AuthRequest, res: Res
       return;
     }
 
-    const updates = req.body;
-
-    // Don't allow updating sensitive fields via this endpoint
-    delete updates.password_hash;
-    delete updates.id;
-    delete updates.family_id;
-
-    const user = await authService.updateUser(req.user.userId, updates);
+    // updateUser only applies profile fields (name, email, color)
+    const user = await authService.updateUser(req.user.userId, req.body);
 
     // Remove password_hash from response
     const { password_hash, ...userWithoutPassword } = user;

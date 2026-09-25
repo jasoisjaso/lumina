@@ -2,6 +2,10 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../database/knex';
 import { config } from '../config';
+import { stripHtml } from '../middleware/sanitize.middleware';
+
+const UPDATABLE_USER_FIELDS = ['first_name', 'last_name', 'email', 'color'] as const;
+type UpdatableUserField = (typeof UPDATABLE_USER_FIELDS)[number];
 
 /**
  * Authentication Service
@@ -17,6 +21,7 @@ export interface User {
   last_name: string;
   role: 'admin' | 'member';
   color: string | null;
+  status?: 'active' | 'invited' | 'disabled';
   created_at: Date;
   updated_at: Date;
 }
@@ -36,6 +41,7 @@ export interface TokenPayload {
   email: string;
   familyId: number;
   role: string;
+  tokenType?: 'access' | 'refresh';
 }
 
 export interface AuthTokens {
@@ -57,7 +63,7 @@ class AuthService {
    * - At least one lowercase letter
    * - At least one number
    */
-  private validatePassword(password: string): { valid: boolean; error?: string } {
+  validatePassword(password: string): { valid: boolean; error?: string } {
     if (password.length < 8) {
       return { valid: false, error: 'Password must be at least 8 characters long' };
     }
@@ -91,7 +97,7 @@ class AuthService {
    * Generate JWT access token
    */
   generateAccessToken(payload: TokenPayload): string {
-    return jwt.sign(payload, config.jwtSecret, {
+    return jwt.sign(this.claims(payload, 'access'), config.jwtSecret, {
       expiresIn: this.ACCESS_TOKEN_EXPIRY,
     });
   }
@@ -100,9 +106,44 @@ class AuthService {
    * Generate JWT refresh token
    */
   generateRefreshToken(payload: TokenPayload): string {
-    return jwt.sign(payload, config.jwtSecret, {
+    return jwt.sign(this.claims(payload, 'refresh'), config.jwtSecret, {
       expiresIn: this.REFRESH_TOKEN_EXPIRY,
     });
+  }
+
+  private claims(payload: TokenPayload, tokenType: 'access' | 'refresh'): TokenPayload {
+    return {
+      userId: payload.userId,
+      email: payload.email,
+      familyId: payload.familyId,
+      role: payload.role,
+      tokenType,
+    };
+  }
+
+  /**
+   * Load the current state of an active user for a token payload. Role and
+   * family come from the database so demotions and disabled accounts apply
+   * immediately instead of when the token expires.
+   */
+  private async activeUserPayload(payload: TokenPayload): Promise<TokenPayload> {
+    const user = await this.getUserById(payload.userId);
+    if (!user || (user.status && user.status !== 'active')) {
+      throw new Error('Invalid or expired token');
+    }
+    return { userId: user.id, email: user.email, familyId: user.family_id, role: user.role };
+  }
+
+  /**
+   * Verify an access token (refresh tokens are rejected) and return the
+   * user's current details
+   */
+  async verifyAccessToken(token: string): Promise<TokenPayload> {
+    const payload = this.verifyToken(token);
+    if (payload.tokenType !== 'access') {
+      throw new Error('Invalid or expired token');
+    }
+    return this.activeUserPayload(payload);
   }
 
   /**
@@ -232,7 +273,20 @@ class AuthService {
     }
 
     // Verify password
-    const isPasswordValid = await this.comparePassword(password, user.password_hash);
+    let isPasswordValid = await this.comparePassword(password, user.password_hash);
+
+    // Passwords used to be HTML-sanitized before hashing, which altered any
+    // containing <, > or &. Accept the old form once and re-hash the real one.
+    if (!isPasswordValid) {
+      const legacyPassword = stripHtml(password);
+      if (legacyPassword !== password && (await this.comparePassword(legacyPassword, user.password_hash))) {
+        isPasswordValid = true;
+        await db('users')
+          .where({ id: user.id })
+          .update({ password_hash: await this.hashPassword(password), updated_at: new Date() });
+      }
+    }
+
     if (!isPasswordValid) {
       throw new Error('Invalid email or password');
     }
@@ -274,13 +328,12 @@ class AuthService {
       throw new Error('Invalid or expired refresh token');
     }
 
-    // Generate new access token
-    const accessToken = this.generateAccessToken({
-      userId: payload.userId,
-      email: payload.email,
-      familyId: payload.familyId,
-      role: payload.role,
-    });
+    if (payload.tokenType === 'access') {
+      throw new Error('Invalid or expired refresh token');
+    }
+
+    // Generate new access token from the user's current details
+    const accessToken = this.generateAccessToken(await this.activeUserPayload(payload));
 
     return {
       accessToken,
@@ -309,8 +362,14 @@ class AuthService {
    * Update user profile
    */
   async updateUser(userId: number, updates: Partial<User>): Promise<User> {
-    // Remove sensitive fields that shouldn't be updated directly
-    const { id, password_hash, created_at, updated_at, ...allowedUpdates } = updates as any;
+    // Only profile fields may be changed here. Role, status, family and
+    // credentials have dedicated endpoints with their own checks.
+    const allowedUpdates: Partial<Pick<User, UpdatableUserField>> = {};
+    for (const field of UPDATABLE_USER_FIELDS) {
+      if (updates[field] !== undefined) {
+        (allowedUpdates as Record<string, unknown>)[field] = updates[field];
+      }
+    }
 
     await db('users').where({ id: userId }).update({
       ...allowedUpdates,

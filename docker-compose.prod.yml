@@ -89,8 +89,7 @@ services:
     image: redis:7-alpine
     container_name: lumina-redis-prod
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # No published ports: only reachable by the backend on lumina-network
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
     volumes:
       - redis_data:/data

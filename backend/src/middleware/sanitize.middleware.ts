@@ -1,19 +1,33 @@
 import { Request, Response, NextFunction } from 'express';
 import sanitizeHtml from 'sanitize-html';
 
-const sanitizeValue = (value: any): any => {
+// Password fields must never be sanitized: HTML stripping can silently truncate
+// values containing '<' or '>', corrupting stored hashes and locking users out.
+const SENSITIVE_FIELDS = new Set([
+  'password',
+  'currentPassword',
+  'newPassword',
+  'confirmPassword',
+  'password_hash',
+]);
+
+export const stripHtml = (value: string): string =>
+  sanitizeHtml(value, {
+    allowedTags: [],
+    allowedAttributes: {},
+  });
+
+const sanitizeValue = (value: any, key?: string): any => {
+  if (key && SENSITIVE_FIELDS.has(key)) return value;
   if (typeof value === 'string') {
-    return sanitizeHtml(value, {
-      allowedTags: [],
-      allowedAttributes: {},
-    });
+    return stripHtml(value);
   }
   if (Array.isArray(value)) {
     return value.map(item => sanitizeValue(item));
   }
   if (value !== null && typeof value === 'object') {
     return Object.keys(value).reduce((acc, key) => {
-      acc[key] = sanitizeValue(value[key]);
+      acc[key] = sanitizeValue(value[key], key);
       return acc;
     }, {} as { [key: string]: any });
   }
